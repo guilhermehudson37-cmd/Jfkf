@@ -1,12 +1,15 @@
 --[[
-    Ghub - Blox Fruits Script (Melhorado)
-    Features:
-    - Auto Farm com Tween (distância de 15 studs)
-    - Auto Click (ataque contínuo enquanto próximo)
-    - Bring Mobs
-    - Auto Haki (melhor detecção)
-    - Minimizar/Expandir Hub
-    - Key System (jpeqck789)
+    Ghub - Blox Fruits Script (Versão Avançada)
+    - Auto Farm: 
+        * Obtém missão automaticamente com base no level
+        * Navega até o NPC da missão usando Tween
+        * Interage com o NPC para pegar a missão
+        * Vai até a área dos mobs da missão
+        * Farm contínuo com Auto Click e Bring Mobs automático
+    - Auto Haki: ativa automaticamente quando necessário (sem toggle)
+    - Bring Mobs: integrado ao farm, puxa mobs periodicamente
+    - Sistema de Key: "jpeqck789"
+    - Interface com minimizar e fechar
 ]]
 
 -- Services
@@ -17,6 +20,7 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
+local Camera = Workspace.CurrentCamera
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -24,45 +28,90 @@ local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
 
 -- Config
-local ATTACK_DISTANCE = 15 -- Distância de ataque
-local HAKI_KEY = "G"       -- Tecla para ativar Haki
-local AUTO_CLICK_INTERVAL = 0.15 -- Intervalo entre ataques
+local ATTACK_DISTANCE = 15      -- Distância de ataque
+local BRING_INTERVAL = 5        -- Segundos entre cada Bring Mobs
+local HAKI_KEY = "G"            -- Tecla do Haki
+local AUTO_CLICK_INTERVAL = 0.15
 
--- Variables
+-- Variáveis de estado
 local autoFarmEnabled = false
-local autoHakiEnabled = false
-local autoClickEnabled = false
-local bringMobsCooldown = false
+local autoHakiEnabled = true    -- Sempre ativo
 local farmLoopConnection = nil
 local hakiLoopConnection = nil
 local attackLoopConnection = nil
+local bringLoopConnection = nil
+local statusText = "Desligado"
 local isMinimized = false
+local currentQuest = nil        -- Armazena informações da missão atual
 
 -- GUI references
 local mainScreenGui = nil
 local mainFrame = nil
 local minimizeButton = nil
 local restoreButton = nil
+local statusLabel = nil
+local farmToggle = nil
 
--- Helper: Check if a model is an enemy (NPC)
-local function isEnemy(model)
+-- Helper: Obter nível do jogador
+local function getPlayerLevel()
+    local leaderstats = player:FindFirstChild("leaderstats")
+    if leaderstats then
+        local level = leaderstats:FindFirstChild("Level") or leaderstats:FindFirstChild("Levels")
+        if level then
+            return level.Value
+        end
+    end
+    return 0
+end
+
+-- Dados das missões por nível (exemplo simplificado)
+-- Estrutura: { minLevel, maxLevel, npcName, npcLocation, mobName, mobLocation }
+local quests = {
+    { min = 1, max = 10, npcName = "Pirate Villager", npcLocation = Vector3.new(-100, 10, 50), 
+      mobName = "Bandit", mobLocation = Vector3.new(-200, 10, 100) },
+    { min = 11, max = 25, npcName = "Pirate Captain", npcLocation = Vector3.new(0, 10, 0),
+      mobName = "Pirate", mobLocation = Vector3.new(100, 10, 50) },
+    -- Adicione mais níveis conforme necessário
+    { min = 26, max = 50, npcName = "Jungle Guy", npcLocation = Vector3.new(200, 10, -100),
+      mobName = "Jungle Wolf", mobLocation = Vector3.new(250, 10, -150) },
+    { min = 51, max = 100, npcName = "Ice Admiral", npcLocation = Vector3.new(-300, 10, 200),
+      mobName = "Ice Soldier", mobLocation = Vector3.new(-350, 10, 250) },
+}
+
+-- Função para obter a missão apropriada para o nível atual
+local function getQuestForLevel(level)
+    for _, q in ipairs(quests) do
+        if level >= q.min and level <= q.max then
+            return q
+        end
+    end
+    return nil
+end
+
+-- Verifica se um modelo é um mob da missão atual
+local function isQuestMob(model)
+    if not currentQuest then return false end
     if not model or not model:IsA("Model") then return false end
     if model == character then return false end
     local hum = model:FindFirstChild("Humanoid")
     if not hum or hum.Health <= 0 then return false end
     if Players:GetPlayerFromCharacter(model) then return false end
-    -- Add specific filters for Blox Fruits (ex: exclude friendly NPCs)
-    return true
+    -- Verifica se o nome contém o nome do mob da missão
+    local mobName = currentQuest.mobName
+    if model.Name:find(mobName) then
+        return true
+    end
+    return false
 end
 
--- Helper: Get all enemies
-local function getEnemies()
-    local enemies = {}
+-- Obtém todos os mobs da missão ativa
+local function getQuestMobs()
+    local mobs = {}
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and isEnemy(obj) then
+        if obj:IsA("Model") and isQuestMob(obj) then
             local root = obj:FindFirstChild("HumanoidRootPart")
             if root then
-                table.insert(enemies, {
+                table.insert(mobs, {
                     Model = obj,
                     Humanoid = obj:FindFirstChild("Humanoid"),
                     RootPart = root
@@ -70,29 +119,29 @@ local function getEnemies()
             end
         end
     end
-    return enemies
+    return mobs
 end
 
--- Helper: Find nearest enemy
-local function findNearestEnemy()
-    local enemies = getEnemies()
+-- Encontra o mob mais próximo da missão
+local function findNearestQuestMob()
+    local mobs = getQuestMobs()
     local nearest = nil
     local minDist = math.huge
     local playerPos = rootPart.Position
-    for _, enemy in ipairs(enemies) do
-        local dist = (enemy.RootPart.Position - playerPos).Magnitude
+    for _, mob in ipairs(mobs) do
+        local dist = (mob.RootPart.Position - playerPos).Magnitude
         if dist < minDist then
             minDist = dist
-            nearest = enemy
+            nearest = mob
         end
     end
     return nearest
 end
 
--- Helper: Tween to position (using CFrame)
-local function tweenToPosition(targetPos)
+-- Helper: Tween para uma posição
+local function tweenToPosition(targetPos, callback)
     local tweenInfo = TweenInfo.new(
-        0.8, -- time
+        0.8,
         Enum.EasingStyle.Linear,
         Enum.EasingDirection.Out
     )
@@ -100,35 +149,81 @@ local function tweenToPosition(targetPos)
     local tween = TweenService:Create(rootPart, tweenInfo, goal)
     tween:Play()
     tween.Completed:Wait()
+    if callback then callback() end
 end
 
--- Auto Farm movement logic
-local function farmLoop()
-    while autoFarmEnabled and task.wait(0.1) do
-        local target = findNearestEnemy()
-        if target then
-            local targetPos = target.RootPart.Position
-            local currentPos = rootPart.Position
-            local distance = (targetPos - currentPos).Magnitude
-            if distance > ATTACK_DISTANCE then
-                -- Move towards enemy until ATTACK_DISTANCE away
-                local direction = (targetPos - currentPos).Unit
-                local goalPos = targetPos - direction * ATTACK_DISTANCE
-                tweenToPosition(goalPos)
-            end
-            -- Se já estiver na distância, o ataque contínuo será feito pelo attackLoop
+-- Função para interagir com NPC (pressiona E e clica no NPC)
+local function interactWithNPC(npcModel)
+    if not npcModel then return false end
+    local npcRoot = npcModel:FindFirstChild("HumanoidRootPart") or npcModel:FindFirstChild("Head")
+    if not npcRoot then return false end
+    -- Move para perto do NPC
+    local npcPos = npcRoot.Position
+    local dir = (npcPos - rootPart.Position).Unit
+    local standPos = npcPos - dir * 5
+    tweenToPosition(standPos)
+    task.wait(0.5)
+    -- Pressiona E para interagir
+    VirtualInputManager:SendKeyEvent(true, "E", false, nil)
+    task.wait(0.1)
+    VirtualInputManager:SendKeyEvent(false, "E", false, nil)
+    task.wait(0.5)
+    -- Agora esperamos o diálogo e clicamos no botão "Aceitar" (ou similar)
+    -- Para simplicidade, esperamos 1s e depois clicamos em uma posição fixa onde o botão costuma aparecer
+    -- Em Blox Fruits, o botão de aceitar geralmente está no centro inferior
+    -- Mas podemos tentar detectar o botão pela GUI
+    -- Vamos usar um clique na tela (posição central) - isso pode ser ajustado
+    local screenSize = Camera.ViewportSize
+    local clickX = screenSize.X / 2
+    local clickY = screenSize.Y / 2 + 100 -- Ajuste conforme necessário
+    VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, "Left", 0)
+    task.wait(0.1)
+    VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, "Left", 0)
+    task.wait(0.5)
+    return true
+end
+
+-- Função para pegar a missão
+local function takeQuest()
+    if not currentQuest then return false end
+    -- Encontra o NPC com base no nome
+    local npc = nil
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find(currentQuest.npcName) then
+            npc = obj
+            break
+        end
+    end
+    if not npc then
+        statusText = "NPC não encontrado!"
+        return false
+    end
+    statusText = "Interagindo com " .. currentQuest.npcName
+    return interactWithNPC(npc)
+end
+
+-- Função para fazer Bring Mobs (puxa mobs próximos para perto do jogador)
+local function bringMobs()
+    local mobs = getQuestMobs()
+    local playerPos = rootPart.Position
+    for _, mob in ipairs(mobs) do
+        local dist = (mob.RootPart.Position - playerPos).Magnitude
+        if dist <= 100 then -- raio de busca
+            local targetPos = playerPos + Vector3.new(math.random(-6, 6), 0, math.random(-6, 6))
+            local tween = TweenService:Create(mob.RootPart, TweenInfo.new(0.6, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
+            tween:Play()
+            task.wait(0.08)
         end
     end
 end
 
--- Auto Click loop (ataque contínuo)
+-- Função de ataque (Auto Click)
 local function attackLoop()
-    while autoFarmEnabled and autoClickEnabled and task.wait(AUTO_CLICK_INTERVAL) do
-        local target = findNearestEnemy()
+    while autoFarmEnabled and task.wait(AUTO_CLICK_INTERVAL) do
+        local target = findNearestQuestMob()
         if target then
             local dist = (target.RootPart.Position - rootPart.Position).Magnitude
-            if dist <= ATTACK_DISTANCE + 2 then -- margem
-                -- Simula clique esquerdo
+            if dist <= ATTACK_DISTANCE + 2 then
                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, "Left", 0)
                 task.wait(0.05)
                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, "Left", 0)
@@ -137,42 +232,85 @@ local function attackLoop()
     end
 end
 
--- Bring Mobs
-local function bringMobs()
-    if bringMobsCooldown then return end
-    bringMobsCooldown = true
-    local playerPos = rootPart.Position
-    local enemies = getEnemies()
-    local gathered = 0
-    for _, enemy in ipairs(enemies) do
-        local dist = (enemy.RootPart.Position - playerPos).Magnitude
-        if dist <= 100 then
-            local targetPos = playerPos + Vector3.new(math.random(-8, 8), 0, math.random(-8, 8))
-            local tweenInfo = TweenInfo.new(0.8, Enum.EasingStyle.Linear)
-            local tween = TweenService:Create(enemy.RootPart, tweenInfo, {CFrame = CFrame.new(targetPos)})
-            tween:Play()
-            gathered = gathered + 1
-            task.wait(0.08)
+-- Loop principal do Auto Farm
+local function farmLoop()
+    while autoFarmEnabled and task.wait(0.1) do
+        -- 1. Verifica se há missão ativa, senão obtém uma
+        if not currentQuest then
+            local level = getPlayerLevel()
+            currentQuest = getQuestForLevel(level)
+            if not currentQuest then
+                statusText = "Nível sem missão definida"
+                task.wait(2)
+                continue
+            end
+            -- Tenta pegar a missão
+            statusText = "Pegando missão..."
+            local success = takeQuest()
+            if not success then
+                statusText = "Falha ao pegar missão"
+                task.wait(3)
+                continue
+            else
+                statusText = "Missão obtida!"
+                task.wait(1)
+            end
+        end
+
+        -- 2. Move para a área dos mobs
+        local mobArea = currentQuest.mobLocation
+        local currentPos = rootPart.Position
+        if (mobArea - currentPos).Magnitude > 20 then
+            statusText = "Indo para área dos mobs..."
+            tweenToPosition(mobArea)
+            task.wait(0.5)
+        end
+
+        -- 3. Procura um mob da missão para atacar
+        local target = findNearestQuestMob()
+        if target then
+            local targetPos = target.RootPart.Position
+            local dist = (targetPos - currentPos).Magnitude
+            if dist > ATTACK_DISTANCE then
+                -- Move para perto do mob
+                local direction = (targetPos - currentPos).Unit
+                local goalPos = targetPos - direction * ATTACK_DISTANCE
+                tweenToPosition(goalPos)
+                task.wait(0.3)
+            end
+            -- O ataque contínuo é feito pelo attackLoop
+            statusText = "Farmando " .. currentQuest.mobName
+        else
+            statusText = "Procurando mobs..."
+            -- Se não há mobs, talvez estejamos na área errada, tenta ir para o centro
+            tweenToPosition(mobArea)
+            task.wait(1)
         end
     end
-    task.wait(1)
-    bringMobsCooldown = false
 end
 
--- Auto Haki
+-- Loop do Bring Mobs (executado em paralelo)
+local function bringLoop()
+    while autoFarmEnabled and task.wait(BRING_INTERVAL) do
+        if currentQuest then
+            bringMobs()
+        end
+    end
+end
+
+-- Auto Haki (sempre ativo)
 local function hakiLoop()
     while autoHakiEnabled and task.wait(0.5) do
         local hakiActive = false
-        -- Verifica se existe algum indicador de Haki ativo (ex: parte com nome específico)
+        -- Verifica se algum filho do personagem indica Haki ativo
         for _, child in ipairs(character:GetChildren()) do
-            if child.Name:lower():find("haki") or child.Name:lower():find("ken") then
+            local name = child.Name:lower()
+            if name:find("haki") or name:find("ken") or name:find("observation") then
                 hakiActive = true
                 break
             end
         end
-        -- Alternativa: verificar se o jogador tem um atributo booleano
         if not hakiActive then
-            -- Ativa Haki pressionando a tecla
             VirtualInputManager:SendKeyEvent(true, HAKI_KEY, false, nil)
             task.wait(0.1)
             VirtualInputManager:SendKeyEvent(false, HAKI_KEY, false, nil)
@@ -180,46 +318,36 @@ local function hakiLoop()
     end
 end
 
--- Toggle functions
+-- Funções de toggle
 local function toggleAutoFarm(state)
     autoFarmEnabled = state
     if autoFarmEnabled then
+        -- Inicia todos os loops
         if farmLoopConnection then farmLoopConnection:Disconnect() end
         farmLoopConnection = RunService.Heartbeat:Connect(farmLoop)
-        -- Auto click liga automaticamente com o farm
-        toggleAutoClick(state)
-    else
-        if farmLoopConnection then
-            farmLoopConnection:Disconnect()
-            farmLoopConnection = nil
-        end
-        toggleAutoClick(false)
-    end
-end
-
-local function toggleAutoClick(state)
-    autoClickEnabled = state
-    if autoClickEnabled and autoFarmEnabled then
+        
         if attackLoopConnection then attackLoopConnection:Disconnect() end
         attackLoopConnection = RunService.Heartbeat:Connect(attackLoop)
+        
+        if bringLoopConnection then bringLoopConnection:Disconnect() end
+        bringLoopConnection = RunService.Heartbeat:Connect(bringLoop)
+        
+        -- Auto Haki já está rodando
+        statusText = "Iniciando..."
     else
-        if attackLoopConnection then
-            attackLoopConnection:Disconnect()
-            attackLoopConnection = nil
-        end
+        if farmLoopConnection then farmLoopConnection:Disconnect(); farmLoopConnection = nil end
+        if attackLoopConnection then attackLoopConnection:Disconnect(); attackLoopConnection = nil end
+        if bringLoopConnection then bringLoopConnection:Disconnect(); bringLoopConnection = nil end
+        currentQuest = nil
+        statusText = "Desligado"
     end
-end
-
-local function toggleAutoHaki(state)
-    autoHakiEnabled = state
-    if autoHakiEnabled then
-        if hakiLoopConnection then hakiLoopConnection:Disconnect() end
-        hakiLoopConnection = RunService.Heartbeat:Connect(hakiLoop)
-    else
-        if hakiLoopConnection then
-            hakiLoopConnection:Disconnect()
-            hakiLoopConnection = nil
-        end
+    -- Atualiza GUI
+    if farmToggle then
+        farmToggle.Text = "Auto Farm: " .. (state and "ON" or "OFF")
+        farmToggle.BackgroundColor3 = state and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 60)
+    end
+    if statusLabel then
+        statusLabel.Text = "Status: " .. statusText
     end
 end
 
@@ -244,7 +372,7 @@ local function restoreGUI()
     end
 end
 
--- Criar GUI Principal
+-- Criação da GUI Principal
 local function createMainGUI()
     mainScreenGui = Instance.new("ScreenGui")
     mainScreenGui.Name = "Ghub"
@@ -252,14 +380,14 @@ local function createMainGUI()
     mainScreenGui.Parent = CoreGui
 
     mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 300, 0, 280)
-    mainFrame.Position = UDim2.new(0.5, -150, 0.5, -140)
+    mainFrame.Size = UDim2.new(0, 300, 0, 200)
+    mainFrame.Position = UDim2.new(0.5, -150, 0.5, -100)
     mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     mainFrame.BackgroundTransparency = 0.1
     mainFrame.BorderSizePixel = 0
     mainFrame.Parent = mainScreenGui
 
-    -- Title + Minimize button
+    -- Título e botão minimizar
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(0.8, 0, 0, 40)
     title.Position = UDim2.new(0, 0, 0, 0)
@@ -281,10 +409,10 @@ local function createMainGUI()
     minimizeButton.Parent = mainFrame
     minimizeButton.MouseButton1Click:Connect(minimizeGUI)
 
-    -- Auto Farm Toggle
-    local farmToggle = Instance.new("TextButton")
+    -- Toggle Auto Farm
+    farmToggle = Instance.new("TextButton")
     farmToggle.Size = UDim2.new(0.8, 0, 0, 35)
-    farmToggle.Position = UDim2.new(0.1, 0, 0.15, 0)
+    farmToggle.Position = UDim2.new(0.1, 0, 0.2, 0)
     farmToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     farmToggle.Text = "Auto Farm: OFF"
     farmToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -292,45 +420,24 @@ local function createMainGUI()
     farmToggle.TextScaled = true
     farmToggle.Parent = mainFrame
     farmToggle.MouseButton1Click:Connect(function()
-        local newState = not autoFarmEnabled
-        toggleAutoFarm(newState)
-        farmToggle.Text = "Auto Farm: " .. (newState and "ON" or "OFF")
-        farmToggle.BackgroundColor3 = newState and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 60)
+        toggleAutoFarm(not autoFarmEnabled)
     end)
 
-    -- Auto Haki Toggle
-    local hakiToggle = Instance.new("TextButton")
-    hakiToggle.Size = UDim2.new(0.8, 0, 0, 35)
-    hakiToggle.Position = UDim2.new(0.1, 0, 0.33, 0)
-    hakiToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    hakiToggle.Text = "Auto Haki: OFF"
-    hakiToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    hakiToggle.Font = Enum.Font.Gotham
-    hakiToggle.TextScaled = true
-    hakiToggle.Parent = mainFrame
-    hakiToggle.MouseButton1Click:Connect(function()
-        local newState = not autoHakiEnabled
-        toggleAutoHaki(newState)
-        hakiToggle.Text = "Auto Haki: " .. (newState and "ON" or "OFF")
-        hakiToggle.BackgroundColor3 = newState and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 60)
-    end)
+    -- Status Label
+    statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(0.9, 0, 0, 30)
+    statusLabel.Position = UDim2.new(0.05, 0, 0.5, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "Status: " .. statusText
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.TextScaled = true
+    statusLabel.Parent = mainFrame
 
-    -- Bring Mobs Button
-    local bringButton = Instance.new("TextButton")
-    bringButton.Size = UDim2.new(0.8, 0, 0, 35)
-    bringButton.Position = UDim2.new(0.1, 0, 0.51, 0)
-    bringButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    bringButton.Text = "Bring Mobs"
-    bringButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    bringButton.Font = Enum.Font.Gotham
-    bringButton.TextScaled = true
-    bringButton.Parent = mainFrame
-    bringButton.MouseButton1Click:Connect(bringMobs)
-
-    -- Close Button
+    -- Botão Fechar
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0.3, 0, 0, 30)
-    closeBtn.Position = UDim2.new(0.35, 0, 0.7, 0)
+    closeBtn.Position = UDim2.new(0.35, 0, 0.75, 0)
     closeBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
     closeBtn.Text = "Close"
     closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -339,9 +446,10 @@ local function createMainGUI()
     closeBtn.Parent = mainFrame
     closeBtn.MouseButton1Click:Connect(function()
         toggleAutoFarm(false)
-        toggleAutoHaki(false)
         if mainScreenGui then mainScreenGui:Destroy() end
         if restoreButton then restoreButton:Destroy() end
+        autoHakiEnabled = false -- Desliga Haki também
+        if hakiLoopConnection then hakiLoopConnection:Disconnect() end
     end)
 
     -- Botão de restauração (aparece quando minimizado)
@@ -356,6 +464,11 @@ local function createMainGUI()
     restoreButton.Visible = false
     restoreButton.Parent = mainScreenGui
     restoreButton.MouseButton1Click:Connect(restoreGUI)
+
+    -- Inicia o Auto Haki (sempre ativo)
+    autoHakiEnabled = true
+    if hakiLoopConnection then hakiLoopConnection:Disconnect() end
+    hakiLoopConnection = RunService.Heartbeat:Connect(hakiLoop)
 end
 
 -- Key System GUI
@@ -426,18 +539,16 @@ local function createKeyGUI()
     end)
 end
 
--- Iniciar Key GUI
+-- Iniciar
 createKeyGUI()
 
--- Cleanup on respawn
+-- Cleanup ao respawn
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoid = character:WaitForChild("Humanoid")
     rootPart = character:WaitForChild("HumanoidRootPart")
+    -- Reativa loops se necessário
     if autoFarmEnabled then
         toggleAutoFarm(true)
-    end
-    if autoHakiEnabled then
-        toggleAutoHaki(true)
     end
 end)
