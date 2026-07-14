@@ -1,29 +1,39 @@
 --[[
-    Ghub - Blox Fruits Script (Versão Estável)
-    Corrigido: detecção de nível, execução de funções, compatibilidade.
+    Ghub - Blox Fruits Script (Versão Otimizada - Baseado no Script de Referência)
+    Funcionalidades aprimoradas:
+    - Auto Farm completo com detecção de nível
+    - Sistema de missões automático (todos os seas)
+    - Bring Mobs integrado
+    - Auto Haki
+    - Auto Click
+    - Sistema de Key: "jpeqck789"
 ]]
 
--- Serviços
+-- ===================== SERVIÇOS E VARIÁVEIS =====================
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local Camera = workspace.CurrentCamera
+local TeleportService = game:GetService("TeleportService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
+local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
--- Configurações
+-- ===================== CONFIGURAÇÕES =====================
 local ATTACK_DISTANCE = 15
 local BRING_INTERVAL = 5
 local HAKI_KEY = "G"
 local CLICK_INTERVAL = 0.15
+local SECONDS = 0.1
 
--- Estado
+-- ===================== ESTADO =====================
 local isFarming = false
 local currentQuest = nil
 local statusMsg = "Parado"
@@ -31,8 +41,11 @@ local farmConn = nil
 local attackConn = nil
 local bringConn = nil
 local hakiConn = nil
+local shouldTween = false
+local PosMon = nil
+local _B = true
 
--- GUI references
+-- ===================== GUI REFERENCES =====================
 local mainGui = nil
 local mainFrame = nil
 local toggleBtn = nil
@@ -41,14 +54,19 @@ local minimizeBtn = nil
 local restoreBtn = nil
 local isMinimized = false
 
+-- ===================== DETECÇÃO DE MUNDO =====================
+local World1 = game.PlaceId == 2753915549 or game.PlaceId == 85211729168715
+local World2 = game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
+local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
+
 -- ===================== DADOS DAS MISSÕES =====================
 local quests = {
     -- Sea 1
-    { min = 1,   max = 15,  npcName = "Jungle Pirate", npcPos = Vector3.new(-1500, 10, 500), mobName = "Bandit", mobPos = Vector3.new(-1600, 10, 600) },
-    { min = 16,  max = 30,  npcName = "Pirate Captain", npcPos = Vector3.new(-1000, 10, 1000), mobName = "Pirate", mobPos = Vector3.new(-1100, 10, 1100) },
-    { min = 31,  max = 50,  npcName = "Jungle Guy", npcPos = Vector3.new(-800, 10, 1500), mobName = "Jungle Wolf", mobPos = Vector3.new(-900, 10, 1600) },
-    { min = 51,  max = 75,  npcName = "Desert Bandit", npcPos = Vector3.new(500, 10, -500), mobName = "Sand Bandit", mobPos = Vector3.new(600, 10, -600) },
-    { min = 76,  max = 100, npcName = "Desert Soldier", npcPos = Vector3.new(800, 10, -800), mobName = "Desert Warrior", mobPos = Vector3.new(900, 10, -900) },
+    { min = 1, max = 15, npcName = "Jungle Pirate", npcPos = Vector3.new(-1500, 10, 500), mobName = "Bandit", mobPos = Vector3.new(-1600, 10, 600) },
+    { min = 16, max = 30, npcName = "Pirate Captain", npcPos = Vector3.new(-1000, 10, 1000), mobName = "Pirate", mobPos = Vector3.new(-1100, 10, 1100) },
+    { min = 31, max = 50, npcName = "Jungle Guy", npcPos = Vector3.new(-800, 10, 1500), mobName = "Jungle Wolf", mobPos = Vector3.new(-900, 10, 1600) },
+    { min = 51, max = 75, npcName = "Desert Bandit", npcPos = Vector3.new(500, 10, -500), mobName = "Sand Bandit", mobPos = Vector3.new(600, 10, -600) },
+    { min = 76, max = 100, npcName = "Desert Soldier", npcPos = Vector3.new(800, 10, -800), mobName = "Desert Warrior", mobPos = Vector3.new(900, 10, -900) },
     { min = 101, max = 130, npcName = "Ice Admiral", npcPos = Vector3.new(-2000, 10, -1500), mobName = "Ice Soldier", mobPos = Vector3.new(-2100, 10, -1600) },
     { min = 131, max = 160, npcName = "Ice Commander", npcPos = Vector3.new(-2200, 10, -1700), mobName = "Ice Knight", mobPos = Vector3.new(-2300, 10, -1800) },
     { min = 161, max = 200, npcName = "Sky Guardian", npcPos = Vector3.new(1200, 100, 0), mobName = "Sky Warrior", mobPos = Vector3.new(1300, 100, 100) },
@@ -109,23 +127,23 @@ local quests = {
     { min = 2501, max = 2550, npcName = "Ultimate Boss", npcPos = Vector3.new(15000, 10, -15000), mobName = "Ultimate Soldier", mobPos = Vector3.new(15100, 10, -15100) },
 }
 
--- ===================== FUNÇÕES AUXILIARES =====================
+-- ===================== FUNÇÕES DO SCRIPT DE REFERÊNCIA =====================
 
--- Detecção de nível robusta
+-- Obtém nível do jogador
 local function getPlayerLevel()
-    local stats = player:FindFirstChild("leaderstats")
+    local stats = player:FindFirstChild("Data") or player:FindFirstChild("leaderstats")
     if stats then
-        local levelObj = stats:FindFirstChild("Level") or stats:FindFirstChild("level") or stats:FindFirstChild("Lvl") or stats:FindFirstChild("Levels")
+        local levelObj = stats:FindFirstChild("Level") or stats:FindFirstChild("level") 
         if levelObj and type(levelObj.Value) == "number" then
             return math.floor(levelObj.Value)
         end
     end
-    -- Fallback: tenta em outros lugares
-    local levelData = player:FindFirstChild("Level") or player:FindFirstChild("level") or player:FindFirstChild("PlayerLevel")
+    -- Fallback: tenta em ReplicatedStorage
+    local levelData = player:FindFirstChild("Level") or player:FindFirstChild("level")
     if levelData and type(levelData.Value) == "number" then
         return math.floor(levelData.Value)
     end
-    return 1 -- se não encontrar, assume nível 1
+    return 1
 end
 
 -- Encontra missão por nível
@@ -136,28 +154,106 @@ local function getQuestForLevel(level)
             return q
         end
     end
-    return quests[#quests] -- último disponível
+    return quests[#quests]
 end
 
--- Encontra um modelo pelo nome (sem string.split)
+-- Equipa uma arma
+function EquipWeapon(text)
+    if not text then return end
+    if player.Backpack:FindFirstChild(text) then
+        player.Character.Humanoid:EquipTool(player.Backpack:FindFirstChild(text))
+    end
+end
+
+-- Função para usar habilidades
+function UseSkill(weapon, skill)
+    if weapon == "Melee" then
+        EquipWeapon("Melee")
+        if skill == "Z" then
+            VirtualInputManager:SendKeyEvent(true, "Z", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "Z", false, game)
+        elseif skill == "X" then
+            VirtualInputManager:SendKeyEvent(true, "X", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "X", false, game)
+        elseif skill == "C" then
+            VirtualInputManager:SendKeyEvent(true, "C", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "C", false, game)
+        end
+    elseif weapon == "Sword" then
+        EquipWeapon("Sword")
+        if skill == "Z" then
+            VirtualInputManager:SendKeyEvent(true, "Z", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "Z", false, game)
+        elseif skill == "X" then
+            VirtualInputManager:SendKeyEvent(true, "X", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "X", false, game)
+        end
+    elseif weapon == "Blox Fruit" then
+        EquipWeapon("Blox Fruit")
+        if skill == "Z" then
+            VirtualInputManager:SendKeyEvent(true, "Z", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "Z", false, game)
+        elseif skill == "X" then
+            VirtualInputManager:SendKeyEvent(true, "X", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "X", false, game)
+        elseif skill == "C" then
+            VirtualInputManager:SendKeyEvent(true, "C", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "C", false, game)
+        elseif skill == "V" then
+            VirtualInputManager:SendKeyEvent(true, "V", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "V", false, game)
+        end
+    elseif weapon == "Gun" then
+        EquipWeapon("Gun")
+        if skill == "Z" then
+            VirtualInputManager:SendKeyEvent(true, "Z", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "Z", false, game)
+        elseif skill == "X" then
+            VirtualInputManager:SendKeyEvent(true, "X", false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, "X", false, game)
+        end
+    end
+end
+
+-- Tween para posição
+local function tweenToPosition(targetPos)
+    if not rootPart then return end
+    local pos = Vector3.new(targetPos.X, rootPart.Position.Y, targetPos.Z)
+    local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local goal = {CFrame = CFrame.new(pos)}
+    local tween = TweenService:Create(rootPart, tweenInfo, goal)
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+-- Encontra modelo pelo nome
 local function findModelByName(partialName)
     if not partialName or partialName == "" then return nil end
-    local found = nil
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj ~= character then
             if obj.Name:lower():find(partialName:lower()) then
                 local root = obj:FindFirstChild("HumanoidRootPart")
                 if root then
-                    found = obj
-                    break
+                    return obj
                 end
             end
         end
     end
-    return found
+    return nil
 end
 
--- Obtém mobs da missão
+-- Encontra mobs da missão
 local function getQuestMobs()
     if not currentQuest then return {} end
     local mobs = {}
@@ -194,15 +290,6 @@ local function findNearestQuestMob()
     return nearest
 end
 
--- Tween com segurança
-local function tweenToPosition(targetPos)
-    if not rootPart then return end
-    local pos = Vector3.new(targetPos.X, rootPart.Position.Y, targetPos.Z)
-    local tween = TweenService:Create(rootPart, TweenInfo.new(1, Enum.EasingStyle.Linear), {CFrame = CFrame.new(pos)})
-    tween:Play()
-    tween.Completed:Wait()
-end
-
 -- Interage com NPC
 local function interactWithNPC(npcModel)
     if not npcModel then return false end
@@ -213,23 +300,23 @@ local function interactWithNPC(npcModel)
     local dir = (npcPos - rootPart.Position).Unit
     local standPos = npcPos - dir * 5
     tweenToPosition(standPos)
-    wait(0.5)
+    task.wait(0.5)
     
     VirtualInputManager:SendKeyEvent(true, "E", false, nil)
-    wait(0.2)
+    task.wait(0.2)
     VirtualInputManager:SendKeyEvent(false, "E", false, nil)
-    wait(0.5)
+    task.wait(0.5)
     
     local screenSize = Camera.ViewportSize
     local clickX = screenSize.X / 2
     for i = 1, 3 do
         local yPos = screenSize.Y / 2 + 60 + (i-1)*30
         VirtualInputManager:SendMouseButtonEvent(clickX, yPos, 0, true, "Left", 0)
-        wait(0.1)
+        task.wait(0.1)
         VirtualInputManager:SendMouseButtonEvent(clickX, yPos, 0, false, "Left", 0)
-        wait(0.2)
+        task.wait(0.2)
     end
-    wait(0.5)
+    task.wait(0.5)
     return true
 end
 
@@ -250,7 +337,7 @@ local function takeQuest(quest)
     end
     statusMsg = "Indo para NPC..."
     tweenToPosition(quest.npcPos)
-    wait(0.5)
+    task.wait(0.5)
     statusMsg = "Interagindo..."
     local success = interactWithNPC(npc)
     if success then
@@ -263,109 +350,8 @@ local function takeQuest(quest)
     end
 end
 
--- ===================== LOOPS PRINCIPAIS =====================
-
-local function farmLoop()
-    while isFarming do
-        wait(0.1)
-        pcall(function()
-            if not currentQuest then
-                local level = getPlayerLevel()
-                local quest = getQuestForLevel(level)
-                if not quest then
-                    statusMsg = "Nível sem missão: " .. tostring(level)
-                    wait(2)
-                    return
-                end
-                statusMsg = "Pegando missão nível " .. tostring(level)
-                local success = takeQuest(quest)
-                if not success then
-                    wait(3)
-                    return
-                else
-                    statusMsg = "Indo para mobs..."
-                    tweenToPosition(quest.mobPos)
-                    wait(0.5)
-                end
-            end
-
-            if currentQuest then
-                local mobArea = currentQuest.mobPos
-                if (mobArea - rootPart.Position).Magnitude > 20 then
-                    statusMsg = "Indo para área..."
-                    tweenToPosition(mobArea)
-                    wait(0.5)
-                end
-            end
-
-            local target = findNearestQuestMob()
-            if target then
-                local targetPos = target.RootPart.Position
-                local dist = (targetPos - rootPart.Position).Magnitude
-                if dist > ATTACK_DISTANCE then
-                    local dir = (targetPos - rootPart.Position).Unit
-                    local goalPos = targetPos - dir * ATTACK_DISTANCE
-                    tweenToPosition(goalPos)
-                    wait(0.3)
-                end
-                statusMsg = "Farmando " .. currentQuest.mobName
-            else
-                statusMsg = "Procurando mobs..."
-                wait(1)
-            end
-        end)
-    end
-end
-
-local function attackLoop()
-    while isFarming do
-        wait(0.05)
-        pcall(function()
-            local target = findNearestQuestMob()
-            if target then
-                local dist = (target.RootPart.Position - rootPart.Position).Magnitude
-                if dist <= ATTACK_DISTANCE + 2 then
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, "Left", 0)
-                    wait(0.05)
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, "Left", 0)
-                end
-            end
-        end)
-    end
-end
-
-local function bringLoop()
-    while isFarming do
-        wait(BRING_INTERVAL)
-        pcall(function()
-            if currentQuest then
-                local mobs = getQuestMobs()
-                local playerPos = rootPart.Position
-                for _, mob in ipairs(mobs) do
-                    local dist = (mob.RootPart.Position - playerPos).Magnitude
-                    if dist <= 100 then
-                        local targetPos = playerPos + Vector3.new(math.random(-6, 6), 0, math.random(-6, 6))
-                        local tween = TweenService:Create(mob.RootPart, TweenInfo.new(0.6, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
-                        tween:Play()
-                        wait(0.08)
-                    end
-                end
-            end
-        end)
-    end
-end
-
-local function hakiLoop()
-    while isFarming do
-        wait(1)
-        pcall(function()
-            local hakiActive = false
-            for _, child in ipairs(character:GetChildren()) do
-                local name = child.Name:lower()
-                if name:find("haki") or name:find("ken") or name:find("observation") or name:find("armament") then
-                    hakiActive = true
-                    break
-                end
-            end
-            if not hakiActive then
-                VirtualInputManager:SendKeyEvent(
+-- Bring Enemies (versão melhorada)
+local function bringEnemies()
+    if not _B then return end
+    local mobs = getQuestMobs()
+    local playerPos
