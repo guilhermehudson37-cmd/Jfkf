@@ -1,317 +1,575 @@
--- g Hub - Auto Farm
--- Script criado para Blox Fruits
+--[[
+    GHUB - Blox Fruits Script
+    Versão: 1.1
+    CORRIGIDO - Interface funcionando
+]]
 
-local gHub = {}
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
--- Variáveis principais
-local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
-local Character = LP.Character or LP.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-
--- Configurações
-local Config = {
-    Distance = 15, -- Distância de combate
-    TweenSpeed = 300, -- Velocidade do Tween
-    AutoClickDelay = 0.1 -- Delay entre clicks
+-- Configurações Iniciais
+local GHUB = {
+    Key = "726gs5hhf#$44",
+    Name = "GHUB",
+    Version = "1.1",
+    Developer = "GHUB Team"
 }
 
--- Sistema de Key
-local KeySystem = {}
-KeySystem.ValidKeys = {
-    ["GHUB-FREE-2024"] = true,
-    ["BLOX-FRUITS-AUTO"] = true,
-    ["FARM-KEY-001"] = true
+-- Serviços
+local Services = {
+    Players = game:GetService("Players"),
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    Workspace = game:GetService("Workspace"),
+    Lighting = game:GetService("Lighting"),
+    TweenService = game:GetService("TweenService"),
+    VirtualInputManager = game:GetService("VirtualInputManager"),
+    VirtualUser = game:GetService("VirtualUser"),
+    RunService = game:GetService("RunService"),
+    HttpService = game:GetService("HttpService"),
+    TeleportService = game:GetService("TeleportService"),
+    Stats = game:GetService("Stats"),
+    UserInputService = game:GetService("UserInputService")
 }
 
-function KeySystem:ValidateKey(key)
-    return self.ValidKeys[key] or false
-end
+local Player = Services.Players.LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local RootPart = Character:FindFirstChild("HumanoidRootPart")
+local Remote = Services.ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
-function KeySystem:RequestKey()
-    -- Em um script real, você implementaria uma interface para o usuário digitar a key
-    -- Aqui está apenas um exemplo de validação
-    local key = "GHUB-FREE-2024" -- Simulação de key inserida
-    return self:ValidateKey(key)
-end
-
--- Sistema de NPC por nível
-local QuestNPCs = {
-    -- Nível 1-10: Bandit
-    {MinLevel = 1, MaxLevel = 10, NPC = "Bandit", Quest = "Bandit", Mobs = {"Bandit"}},
-    -- Nível 10-25: Monkey
-    {MinLevel = 10, MaxLevel = 25, NPC = "Monkey", Quest = "Monkey", Mobs = {"Monkey"}},
-    -- Nível 25-40: Pirate
-    {MinLevel = 25, MaxLevel = 40, NPC = "Pirate", Quest = "Pirate", Mobs = {"Pirate"}},
-    -- Nível 40-60: Marine
-    {MinLevel = 40, MaxLevel = 60, NPC = "Marine", Quest = "Marine", Mobs = {"Marine"}},
-    -- Nível 60-90: Desert Bandit
-    {MinLevel = 60, MaxLevel = 90, NPC = "Desert Bandit", Quest = "Desert Bandit", Mobs = {"Desert Bandit"}},
-    -- Nível 90-120: Snow Bandit
-    {MinLevel = 90, MaxLevel = 120, NPC = "Snow Bandit", Quest = "Snow Bandit", Mobs = {"Snow Bandit"}},
-    -- Nível 120-150: Chief Warden
-    {MinLevel = 120, MaxLevel = 150, NPC = "Chief Warden", Quest = "Chief Warden", Mobs = {"Chief Warden"}},
-    -- Nível 150-190: Swan Pirate
-    {MinLevel = 150, MaxLevel = 190, NPC = "Swan Pirate", Quest = "Swan Pirate", Mobs = {"Swan Pirate"}},
-    -- Nível 190-240: Factory Staff
-    {MinLevel = 190, MaxLevel = 240, NPC = "Factory Staff", Quest = "Factory Staff", Mobs = {"Factory Staff"}},
-    -- Nível 240-300: Magma Admiral
-    {MinLevel = 240, MaxLevel = 300, NPC = "Magma Admiral", Quest = "Magma Admiral", Mobs = {"Magma Admiral"}},
-    -- Nível 300-350: Fishman Lord
-    {MinLevel = 300, MaxLevel = 350, NPC = "Fishman Lord", Quest = "Fishman Lord", Mobs = {"Fishman Lord"}},
-    -- Nível 350-400: Wysper
-    {MinLevel = 350, MaxLevel = 400, NPC = "Wysper", Quest = "Wysper", Mobs = {"Wysper"}},
-    -- Nível 400-450: Thunder God
-    {MinLevel = 400, MaxLevel = 450, NPC = "Thunder God", Quest = "Thunder God", Mobs = {"Thunder God"}},
-    -- Nível 450-500: Cyborg
-    {MinLevel = 450, MaxLevel = 500, NPC = "Cyborg", Quest = "Cyborg", Mobs = {"Cyborg"}},
-    -- Nível 500-550: Ice Admiral
-    {MinLevel = 500, MaxLevel = 550, NPC = "Ice Admiral", Quest = "Ice Admiral", Mobs = {"Ice Admiral"}},
-    -- Nível 550-600: Greybeard
-    {MinLevel = 550, MaxLevel = 600, NPC = "Greybeard", Quest = "Greybeard", Mobs = {"Greybeard"}},
-    -- Nível 600-700: Diamond
-    {MinLevel = 600, MaxLevel = 700, NPC = "Diamond", Quest = "Diamond", Mobs = {"Diamond"}},
-    -- Nível 700-800: Jeremy
-    {MinLevel = 700, MaxLevel = 800, NPC = "Jeremy", Quest = "Jeremy", Mobs = {"Jeremy"}},
-    -- Nível 800-900: Fajita
-    {MinLevel = 800, MaxLevel = 900, NPC = "Fajita", Quest = "Fajita", Mobs = {"Fajita"}},
-    -- Nível 900-1000: Don Swan
-    {MinLevel = 900, MaxLevel = 1000, NPC = "Don Swan", Quest = "Don Swan", Mobs = {"Don Swan"}},
-    -- Nível 1000-1100: Smoke Admiral
-    {MinLevel = 1000, MaxLevel = 1100, NPC = "Smoke Admiral", Quest = "Smoke Admiral", Mobs = {"Smoke Admiral"}},
-    -- Nível 1100-1200: Awakened Ice Admiral
-    {MinLevel = 1100, MaxLevel = 1200, NPC = "Awakened Ice Admiral", Quest = "Awakened Ice Admiral", Mobs = {"Awakened Ice Admiral"}},
-    -- Nível 1200-1300: Tide Keeper
-    {MinLevel = 1200, MaxLevel = 1300, NPC = "Tide Keeper", Quest = "Tide Keeper", Mobs = {"Tide Keeper"}},
-    -- Nível 1300-1400: Darkbeard
-    {MinLevel = 1300, MaxLevel = 1400, NPC = "Darkbeard", Quest = "Darkbeard", Mobs = {"Darkbeard"}},
-    -- Nível 1400-1500: Cursed Captain
-    {MinLevel = 1400, MaxLevel = 1500, NPC = "Cursed Captain", Quest = "Cursed Captain", Mobs = {"Cursed Captain"}},
-    -- Nível 1500-1600: Order
-    {MinLevel = 1500, MaxLevel = 1600, NPC = "Order", Quest = "Order", Mobs = {"Order"}},
-    -- Nível 1600-1700: Stone
-    {MinLevel = 1600, MaxLevel = 1700, NPC = "Stone", Quest = "Stone", Mobs = {"Stone"}},
-    -- Nível 1700-1800: Hydra Leader
-    {MinLevel = 1700, MaxLevel = 1800, NPC = "Hydra Leader", Quest = "Hydra Leader", Mobs = {"Hydra Leader"}},
-    -- Nível 1800-1900: Kilo Admiral
-    {MinLevel = 1800, MaxLevel = 1900, NPC = "Kilo Admiral", Quest = "Kilo Admiral", Mobs = {"Kilo Admiral"}},
-    -- Nível 1900-2000: Captain Elephant
-    {MinLevel = 1900, MaxLevel = 2000, NPC = "Captain Elephant", Quest = "Captain Elephant", Mobs = {"Captain Elephant"}},
-    -- Nível 2000-2100: Beautiful Pirate
-    {MinLevel = 2000, MaxLevel = 2100, NPC = "Beautiful Pirate", Quest = "Beautiful Pirate", Mobs = {"Beautiful Pirate"}},
-    -- Nível 2100-2200: Cake Queen
-    {MinLevel = 2100, MaxLevel = 2200, NPC = "Cake Queen", Quest = "Cake Queen", Mobs = {"Cake Queen"}},
-    -- Nível 2200-2300: Longma
-    {MinLevel = 2200, MaxLevel = 2300, NPC = "Longma", Quest = "Longma", Mobs = {"Longma"}},
-    -- Nível 2300-2400: Soul Reaper
-    {MinLevel = 2300, MaxLevel = 2400, NPC = "Soul Reaper", Quest = "Soul Reaper", Mobs = {"Soul Reaper"}},
+-- Variáveis Globais do Script
+local Global = {
+    SelectedWeapon = "",
+    FarmMode = false,
+    AutoFarm = false,
+    AutoBoss = false,
+    AutoLevel = false,
+    AutoStats = false,
+    BringEnemy = false,
+    RandomCFrame = false,
+    FarmMastery = false,
+    AimMethod = false,
+    ABmethod = "",
+    MousePos = CFrame.new(),
+    HealthM = 0,
+    CurrentWorld = nil,
+    Bosses = {},
+    Materials = {},
+    PosMsList = {}
 }
 
--- Função para obter o NPC atual baseado no nível
-function gHub:GetCurrentNPC()
-    local level = LP.Data.Level.Value
-    for _, npcData in ipairs(QuestNPCs) do
-        if level >= npcData.MinLevel and level <= npcData.MaxLevel then
-            return npcData
-        end
-    end
-    return QuestNPCs[#QuestNPCs] -- Retorna o último NPC se nível for muito alto
-end
-
--- Função para encontrar o NPC no mundo
-function gHub:FindNPC(npcName)
-    for _, v in pairs(workspace:GetDescendants()) do
-        if v:IsA("Model") and v.Name == npcName and v:FindFirstChild("HumanoidRootPart") then
-            return v
-        end
-    end
-    return nil
-end
-
--- Função para encontrar mobs da missão
-function gHub:FindQuestMobs(mobNames)
-    local mobs = {}
-    for _, v in pairs(workspace.Enemies:GetChildren()) do
-        if v:IsA("Model") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
-            for _, mobName in ipairs(mobNames) do
-                if v.Name == mobName then
-                    table.insert(mobs, v)
-                end
-            end
-        end
-    end
-    return mobs
-end
-
--- Função para mover com Tween
-function gHub:TweenToPosition(targetCFrame)
-    if not HumanoidRootPart then return end
-    
-    local tweenInfo = TweenInfo.new(
-        (HumanoidRootPart.Position - targetCFrame.Position).Magnitude / Config.TweenSpeed,
-        Enum.EasingStyle.Linear,
-        Enum.EasingDirection.Out
-    )
-    
-    local tween = TweenService:Create(HumanoidRootPart, tweenInfo, {CFrame = targetCFrame})
-    tween:Play()
-    tween.Completed:Wait()
-end
-
--- Função para aceitar missão
-function gHub:AcceptQuest(npcName)
-    local npc = self:FindNPC(npcName)
-    if not npc then return false end
-    
-    -- Move para o NPC
-    local npcPos = npc.HumanoidRootPart.CFrame * CFrame.new(0, 0, 5)
-    self:TweenToPosition(npcPos)
-    task.wait(1)
-    
-    -- Interage com o NPC
-    CommF:InvokeServer("Quest", "Start", npcName)
-    task.wait(1)
-    
-    return true
-end
-
--- Função para completar missão
-function gHub:CompleteQuest(npcName)
-    local npc = self:FindNPC(npcName)
-    if not npc then return false end
-    
-    -- Move para o NPC
-    local npcPos = npc.HumanoidRootPart.CFrame * CFrame.new(0, 0, 5)
-    self:TweenToPosition(npcPos)
-    task.wait(1)
-    
-    -- Completa a missão
-    CommF:InvokeServer("Quest", "Complete", npcName)
-    task.wait(1)
-    
-    return true
-end
-
--- Sistema de Auto Click
-function gHub:AutoClick()
-    local tool = LP.Character:FindFirstChildOfClass("Tool")
-    if not tool then return end
-    
-    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-    task.wait(Config.AutoClickDelay)
-    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-end
-
--- Combate contra mobs
-function gHub:FarmMobs(mobNames, questNPC)
-    local killed = 0
-    local questInfo = CommF:InvokeServer("Quest", "Check", questNPC)
-    local requiredKills = questInfo and questInfo.Required or 10
-    
-    while killed < requiredKills and self.Running do
-        -- Verifica se o nível mudou
-        local currentNPC = self:GetCurrentNPC()
-        if currentNPC.NPC ~= questNPC then
-            return false -- Sai para trocar de missão
-        end
-        
-        local mobs = self:FindQuestMobs(mobNames)
-        if #mobs > 0 then
-            -- Encontra o mob mais próximo
-            local closestMob = nil
-            local closestDist = math.huge
-            
-            for _, mob in ipairs(mobs) do
-                local dist = (HumanoidRootPart.Position - mob.HumanoidRootPart.Position).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    closestMob = mob
-                end
-            end
-            
-            if closestMob then
-                -- Move para perto do mob com distância configurável
-                local mobPos = closestMob.HumanoidRootPart.CFrame * CFrame.new(0, 0, Config.Distance)
-                self:TweenToPosition(mobPos)
-                task.wait(0.5)
-                
-                -- Auto Click no mob
-                local startTime = tick()
-                while closestMob and closestMob.Humanoid.Health > 0 and self.Running do
-                    self:AutoClick()
-                    task.wait(0.1)
-                    
-                    -- Se o mob morrer, incrementa o contador
-                    if not closestMob:FindFirstChild("Humanoid") or closestMob.Humanoid.Health <= 0 then
-                        killed = killed + 1
-                        break
-                    end
-                end
-            end
-        else
-            -- Se não encontrar mobs, espera um pouco e tenta novamente
-            task.wait(1)
-        end
-    end
-    
-    return true
-end
-
--- Loop principal do Auto Farm
-function gHub:AutoFarmLoop()
-    while self.Running do
-        -- Obtém o NPC atual baseado no nível
-        local npcData = self:GetCurrentNPC()
-        
-        -- Aceita a missão
-        if not self:AcceptQuest(npcData.NPC) then
-            task.wait(1)
-            continue
-        end
-        
-        -- Farm de mobs
-        local success = self:FarmMobs(npcData.Mobs, npcData.NPC)
-        
-        -- Se o nível mudou durante o farm, recomeça o loop
-        if not success then
-            continue
-        end
-        
-        -- Completa a missão
-        self:CompleteQuest(npcData.NPC)
-        task.wait(1)
-    end
-end
-
--- Inicia o Auto Farm
-function gHub:Start()
-    -- Verifica a key
-    if not KeySystem:RequestKey() then
-        warn("g Hub: Key inválida! Auto Farm não ativado.")
-        return
-    end
-    
-    self.Running = true
-    print("g Hub: Auto Farm iniciado!")
-    
+-- Configuração Inicial do Jogo
+local function SetupGame()
     task.spawn(function()
-        self:AutoFarmLoop()
+        repeat task.wait() until game:IsLoaded() and Player
+        task.wait(1)
+        pcall(function()
+            Remote:InvokeServer("SetTeam", "Pirates")
+        end)
     end)
 end
 
--- Para o Auto Farm
-function gHub:Stop()
-    self.Running = false
-    print("g Hub: Auto Farm parado!")
+-- Verificação de Mundo
+local function GetWorld()
+    local placeId = game.PlaceId
+    if placeId == 2753915549 or placeId == 85211729168715 then
+        return 1
+    elseif placeId == 4442272183 or placeId == 79091703265657 then
+        return 2
+    elseif placeId == 7449423635 or placeId == 100117331123089 then
+        return 3
+    else
+        return nil
+    end
 end
 
--- Cria o comando global
-_G.gHub = gHub
+-- Configuração de Bosses e Materiais por Mundo
+local function SetupWorldData()
+    local world = GetWorld()
+    Global.CurrentWorld = world
+    
+    if world == 1 then
+        Global.Bosses = {"The Gorilla King","Bobby","The Saw","Yeti","Mob Leader","Vice Admiral","Saber Expert","Warden","Chief Warden","Swan","Magma Admiral","Fishman Lord","Wysper","Thunder God","Cyborg","Ice Admiral","Greybeard"}
+        Global.Materials = {"Leather + Scrap Metal", "Angel Wings", "Magma Ore", "Fish Tail"}
+    elseif world == 2 then
+        Global.Bosses = {"Diamond","Jeremy","Fajita","Don Swan","Smoke Admiral","Awakened Ice Admiral","Tide Keeper","Darkbeard","Cursed Captain","Order"}
+        Global.Materials = {"Leather + Scrap Metal", "Radioactive Material", "Ectoplasm", "Mystic Droplet", "Magma Ore", "Vampire Fang"}
+    elseif world == 3 then
+        Global.Bosses = {"Stone","Hydra Leader","Kilo Admiral","Captain Elephant","Beautiful Pirate","Cake Queen","Longma","Soul Reaper"}
+        Global.Materials = {"Scrap Metal", "Demonic Wisp", "Conjured Cocoa", "Dragon Scale", "Gunpowder", "Fish Tail", "Mini Tusk"}
+    end
+end
 
-print("g Hub carregado com sucesso! Use _G.gHub:Start() para iniciar o Auto Farm.")
+-- Funções de Utilidade
+local function EquipWeapon(weaponName)
+    if not weaponName then return false end
+    local backpack = Player.Backpack
+    local character = Player.Character
+    
+    if backpack:FindFirstChild(weaponName) then
+        character.Humanoid:EquipTool(backpack:FindFirstChild(weaponName))
+        return true
+    end
+    return false
+end
+
+local function WeaponByTip(tip)
+    for _, tool in pairs(Player.Backpack:GetChildren()) do
+        if tool:IsA("Tool") and tool.ToolTip == tip then
+            EquipWeapon(tool.Name)
+            return true
+        end
+    end
+    return false
+end
+
+local function UseSkill(weaponType, skill)
+    if weaponType == "Melee" then
+        WeaponByTip("Melee")
+    elseif weaponType == "Sword" then
+        WeaponByTip("Sword")
+    elseif weaponType == "Blox Fruit" then
+        WeaponByTip("Blox Fruit")
+    elseif weaponType == "Gun" then
+        WeaponByTip("Gun")
+    end
+    
+    Services.VirtualInputManager:SendKeyEvent(true, skill, false, game)
+    task.wait(0.05)
+    Services.VirtualInputManager:SendKeyEvent(false, skill, false, game)
+end
+
+local function TeleportTo(position)
+    if RootPart then
+        RootPart.CFrame = position
+    end
+end
+
+-- Sistema de Key
+local function KeySystem()
+    print("Iniciando sistema de key...")
+    
+    -- Aguardar o PlayerGui carregar
+    repeat task.wait() until Player:FindFirstChild("PlayerGui")
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "GHUB_KeySystem"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = Player.PlayerGui
+    
+    -- Fundo escuro
+    local background = Instance.new("Frame")
+    background.Size = UDim2.new(1, 0, 1, 0)
+    background.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    background.BackgroundTransparency = 0.5
+    background.Parent = screenGui
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 450, 0, 250)
+    mainFrame.Position = UDim2.new(0.5, -225, 0.5, -125)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    mainFrame.BackgroundTransparency = 0
+    mainFrame.BorderSizePixel = 0
+    mainFrame.ClipsDescendants = true
+    mainFrame.Parent = screenGui
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 20)
+    corner.Parent = mainFrame
+    
+    -- Borda brilhante
+    local border = Instance.new("Frame")
+    border.Size = UDim2.new(1, 2, 1, 2)
+    border.Position = UDim2.new(0, -1, 0, -1)
+    border.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    border.BackgroundTransparency = 0.3
+    border.BorderSizePixel = 0
+    border.Parent = mainFrame
+    
+    local borderCorner = Instance.new("UICorner")
+    borderCorner.CornerRadius = UDim.new(0, 20)
+    borderCorner.Parent = border
+    
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.new(0, 60, 0, 60)
+    icon.Position = UDim2.new(0.5, -30, 0, 15)
+    icon.BackgroundTransparency = 1
+    icon.Text = "🔑"
+    icon.TextColor3 = Color3.fromRGB(0, 200, 255)
+    icon.TextScaled = true
+    icon.Font = Enum.Font.GothamBold
+    icon.Parent = mainFrame
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.Position = UDim2.new(0, 0, 0, 75)
+    title.BackgroundTransparency = 1
+    title.Text = "GHUB v" .. GHUB.Version
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBold
+    title.Parent = mainFrame
+    
+    local subTitle = Instance.new("TextLabel")
+    subTitle.Size = UDim2.new(1, 0, 0, 30)
+    subTitle.Position = UDim2.new(0, 0, 0, 115)
+    subTitle.BackgroundTransparency = 1
+    subTitle.Text = "Digite a chave de acesso"
+    subTitle.TextColor3 = Color3.fromRGB(180, 180, 200)
+    subTitle.TextScaled = true
+    subTitle.Font = Enum.Font.Gotham
+    subTitle.Parent = mainFrame
+    
+    local keyBox = Instance.new("TextBox")
+    keyBox.Size = UDim2.new(0.8, 0, 0, 45)
+    keyBox.Position = UDim2.new(0.1, 0, 0, 150)
+    keyBox.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+    keyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    keyBox.PlaceholderText = "Insira a chave aqui..."
+    keyBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 180)
+    keyBox.Text = ""
+    keyBox.ClearTextOnFocus = false
+    keyBox.Font = Enum.Font.Gotham
+    keyBox.TextScaled = true
+    keyBox.Parent = mainFrame
+    
+    local keyCorner = Instance.new("UICorner")
+    keyCorner.CornerRadius = UDim.new(0, 10)
+    keyCorner.Parent = keyBox
+    
+    local confirmBtn = Instance.new("TextButton")
+    confirmBtn.Size = UDim2.new(0.4, 0, 0, 45)
+    confirmBtn.Position = UDim2.new(0.3, 0, 0, 200)
+    confirmBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    confirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    confirmBtn.Text = "ACESSAR"
+    confirmBtn.Font = Enum.Font.GothamBold
+    confirmBtn.TextScaled = true
+    confirmBtn.Parent = mainFrame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 10)
+    btnCorner.Parent = confirmBtn
+    
+    -- Efeito hover
+    confirmBtn.MouseEnter:Connect(function()
+        confirmBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
+    end)
+    
+    confirmBtn.MouseLeave:Connect(function()
+        confirmBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    end)
+    
+    local errorText = Instance.new("TextLabel")
+    errorText.Size = UDim2.new(0.8, 0, 0, 25)
+    errorText.Position = UDim2.new(0.1, 0, 0, 180)
+    errorText.BackgroundTransparency = 1
+    errorText.Text = ""
+    errorText.TextColor3 = Color3.fromRGB(255, 50, 50)
+    errorText.TextScaled = true
+    errorText.Font = Enum.Font.Gotham
+    errorText.Visible = false
+    errorText.Parent = mainFrame
+    
+    local function ValidateKey()
+        local inputKey = keyBox.Text
+        if inputKey == GHUB.Key then
+            print("Key correta! Abrindo interface...")
+            screenGui:Destroy()
+            task.wait(0.2)
+            MainUI()
+        else
+            errorText.Visible = true
+            errorText.Text = "❌ Chave incorreta! Tente novamente."
+            keyBox.Text = ""
+            keyBox.PlaceholderText = "Chave incorreta..."
+            keyBox.PlaceholderColor3 = Color3.fromRGB(255, 50, 50)
+            
+            -- Efeito de shake
+            local originalPos = mainFrame.Position
+            for i = 1, 3 do
+                mainFrame.Position = UDim2.new(0.5, -225 + (i % 2 == 0 and -10 or 10), 0.5, -125)
+                task.wait(0.05)
+            end
+            mainFrame.Position = originalPos
+            
+            task.wait(1.5)
+            errorText.Visible = false
+            keyBox.PlaceholderText = "Insira a chave aqui..."
+            keyBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 180)
+        end
+    end
+    
+    confirmBtn.MouseButton1Click:Connect(ValidateKey)
+    keyBox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            ValidateKey()
+        end
+    end)
+    
+    -- Enter key
+    Services.UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.Return or input.KeyCode == Enum.KeyCode.KeypadEnter then
+            if keyBox:IsFocused() then
+                ValidateKey()
+            end
+        end
+    end)
+end
+
+-- Interface Principal
+local function MainUI()
+    print("Carregando interface principal...")
+    
+    -- Aguardar o PlayerGui
+    repeat task.wait() until Player:FindFirstChild("PlayerGui")
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "GHUB_Main"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = Player.PlayerGui
+    
+    -- Fundo escuro
+    local background = Instance.new("Frame")
+    background.Size = UDim2.new(1, 0, 1, 0)
+    background.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    background.BackgroundTransparency = 0.3
+    background.Parent = screenGui
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 550, 0, 650)
+    mainFrame.Position = UDim2.new(0.5, -275, 0.5, -325)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    mainFrame.BackgroundTransparency = 0
+    mainFrame.BorderSizePixel = 0
+    mainFrame.ClipsDescendants = true
+    mainFrame.Parent = screenGui
+    
+    local mainCorner = Instance.new("UICorner")
+    mainCorner.CornerRadius = UDim.new(0, 20)
+    mainCorner.Parent = mainFrame
+    
+    -- Borda gradiente
+    local gradientBorder = Instance.new("Frame")
+    gradientBorder.Size = UDim2.new(1, 2, 1, 2)
+    gradientBorder.Position = UDim2.new(0, -1, 0, -1)
+    gradientBorder.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    gradientBorder.BackgroundTransparency = 0.2
+    gradientBorder.BorderSizePixel = 0
+    gradientBorder.Parent = mainFrame
+    
+    local borderCorner = Instance.new("UICorner")
+    borderCorner.CornerRadius = UDim.new(0, 20)
+    borderCorner.Parent = gradientBorder
+    
+    -- Title Bar
+    local titleBar = Instance.new("Frame")
+    titleBar.Size = UDim2.new(1, 0, 0, 60)
+    titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+    titleBar.BackgroundTransparency = 0
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = mainFrame
+    
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 20)
+    titleCorner.Parent = titleBar
+    
+    local titleText = Instance.new("TextLabel")
+    titleText.Size = UDim2.new(1, -80, 1, 0)
+    titleText.Position = UDim2.new(0, 20, 0, 0)
+    titleText.BackgroundTransparency = 1
+    titleText.Text = "⚡ GHUB v" .. GHUB.Version
+    titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleText.TextScaled = true
+    titleText.Font = Enum.Font.GothamBold
+    titleText.TextXAlignment = Enum.TextXAlignment.Left
+    titleText.Parent = titleBar
+    
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 40, 0, 40)
+    closeBtn.Position = UDim2.new(1, -50, 0, 10)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Text = "✕"
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextScaled = true
+    closeBtn.Parent = titleBar
+    
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(0, 10)
+    closeCorner.Parent = closeBtn
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+    
+    -- Tabs
+    local tabContainer = Instance.new("Frame")
+    tabContainer.Size = UDim2.new(1, -20, 0, 55)
+    tabContainer.Position = UDim2.new(0, 10, 0, 65)
+    tabContainer.BackgroundTransparency = 1
+    tabContainer.Parent = mainFrame
+    
+    local tabs = {"⚔ Farm", "👑 Boss", "⭐ Mastery", "📊 Stats", "⚙ Settings"}
+    local tabButtons = {}
+    local currentTab = nil
+    
+    for i, tabName in ipairs(tabs) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1/#tabs, -5, 1, -5)
+        btn.Position = UDim2.new((i-1)/#tabs + 0.01, 0, 0.5, -27.5)
+        btn.BackgroundColor3 = Color3.fromRGB(40, 40, 65)
+        btn.TextColor3 = Color3.fromRGB(200, 200, 220)
+        btn.Text = tabName
+        btn.Font = Enum.Font.GothamBold
+        btn.TextScaled = true
+        btn.Parent = tabContainer
+        
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 8)
+        btnCorner.Parent = btn
+        
+        tabButtons[tabName] = btn
+        
+        btn.MouseButton1Click:Connect(function()
+            if currentTab then
+                currentTab.BackgroundColor3 = Color3.fromRGB(40, 40, 65)
+                currentTab.TextColor3 = Color3.fromRGB(200, 200, 220)
+            end
+            btn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            currentTab = btn
+            SwitchTab(tabName)
+        end)
+    end
+    
+    local contentFrame = Instance.new("ScrollingFrame")
+    contentFrame.Size = UDim2.new(1, -20, 1, -140)
+    contentFrame.Position = UDim2.new(0, 10, 0, 125)
+    contentFrame.BackgroundTransparency = 1
+    contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    contentFrame.ScrollBarThickness = 4
+    contentFrame.Parent = mainFrame
+    
+    local function CreateToggle(parent, text, defaultValue, callback)
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(1, 0, 0, 45)
+        frame.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+        frame.BackgroundTransparency = 0.5
+        frame.Parent = parent
+        
+        local frameCorner = Instance.new("UICorner")
+        frameCorner.CornerRadius = UDim.new(0, 10)
+        frameCorner.Parent = frame
+        
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(0.7, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = Color3.fromRGB(220, 220, 240)
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Font = Enum.Font.Gotham
+        label.TextScaled = true
+        label.Parent = frame
+        
+        local toggle = Instance.new("TextButton")
+        toggle.Size = UDim2.new(0, 55, 0, 30)
+        toggle.Position = UDim2.new(0.85, 0, 0.5, -15)
+        toggle.BackgroundColor3 = defaultValue and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(100, 100, 130)
+        toggle.Text = defaultValue and "ON" or "OFF"
+        toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+        toggle.TextScaled = true
+        toggle.Font = Enum.Font.GothamBold
+        toggle.Parent = frame
+        
+        local toggleCorner = Instance.new("UICorner")
+        toggleCorner.CornerRadius = UDim.new(0, 8)
+        toggleCorner.Parent = toggle
+        
+        local toggleState = defaultValue
+        
+        toggle.MouseButton1Click:Connect(function()
+            toggleState = not toggleState
+            toggle.BackgroundColor3 = toggleState and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(100, 100, 130)
+            toggle.Text = toggleState and "ON" or "OFF"
+            callback(toggleState)
+        end)
+        
+        return toggle, function()
+            toggleState = defaultValue
+            toggle.BackgroundColor3 = defaultValue and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(100, 100, 130)
+            toggle.Text = defaultValue and "ON" or "OFF"
+        end
+    end
+    
+    local function CreateButton(parent, text, callback)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, 0, 0, 40)
+        btn.BackgroundColor3 = Color3.fromRGB(0, 130, 220)
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Text = text
+        btn.Font = Enum.Font.GothamBold
+        btn.TextScaled = true
+        btn.Parent = parent
+        
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 10)
+        btnCorner.Parent = btn
+        
+        btn.MouseEnter:Connect(function()
+            btn.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
+        end)
+        
+        btn.MouseLeave:Connect(function()
+            btn.BackgroundColor3 = Color3.fromRGB(0, 130, 220)
+        end)
+        
+        btn.MouseButton1Click:Connect(callback)
+        return btn
+    end
+    
+    -- Criar tabs
+    local function CreateTab(tabName)
+        local tab = Instance.new("Frame")
+        tab.Size = UDim2.new(1, 0, 1, 0)
+        tab.BackgroundTransparency = 1
+        tab.Visible = false
+        tab.Parent = contentFrame
+        
+        local layout = Instance.new("UIListLayout")
+        layout.Padding = UDim.new(0, 8)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Parent = tab
+        
+        return tab
+    end
+    
+    -- Tab Farm
+    local farmTab = CreateTab("⚔ Farm")
+    
+    local farmOptions = {"Auto Farm", "Auto Level", "Farm Mastery", "Bring Enemy", "Random CFrame"}
+    local farmValues = {}
+    
+    for _, option in ipairs(farmOptions) do
+        local _, setValue = CreateToggle(farmTab, option, false, function(value)
+            Global[option:gsub(" ", "")] = value
+            print(option .. ":", value)
+        end)
+        farmValues[option] = setValue
+    end
+    
+    CreateButton(farmTab, "🎯 Selecionar Alvo", function()
+        print("Abrindo seleção de alvo...")
+        -- Lógica de seleção de alvo
+    end)
+    
+    -- Tab Boss
+    local bossTab = CreateTab("👑 Boss")
+    CreateToggle(bossTab, "Auto Boss", false, function(value)
+        Global.AutoBoss = value
+    end)
+    CreateButton(bossTab, "🔍 Procurar Boss", function()
+        print("Procurando boss...")
+    end)
+    
+    -- Tab Mastery
+    local masteryTab = CreateTab("⭐ Mastery")
+    CreateToggle(masteryTab, "Farm Mastery", false, function(value)
+        G
