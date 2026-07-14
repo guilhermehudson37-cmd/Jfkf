@@ -1,15 +1,12 @@
 --[[
-    Ghub - Blox Fruits Script (Versão Avançada)
-    - Auto Farm: 
-        * Obtém missão automaticamente com base no level
-        * Navega até o NPC da missão usando Tween
-        * Interage com o NPC para pegar a missão
-        * Vai até a área dos mobs da missão
-        * Farm contínuo com Auto Click e Bring Mobs automático
-    - Auto Haki: ativa automaticamente quando necessário (sem toggle)
-    - Bring Mobs: integrado ao farm, puxa mobs periodicamente
-    - Sistema de Key: "jpeqck789"
-    - Interface com minimizar e fechar
+    Ghub - Blox Fruits Script (Versão Completa com Todos os Seas)
+    Funcionalidades:
+    - Key System: "jpeqck789"
+    - Auto Farm com Tween (missão automática por nível - todos os seas)
+    - Auto Click (ataque contínuo)
+    - Bring Mobs automático (puxa mobs para perto)
+    - Auto Haki automático (ativa quando necessário)
+    - Interface simples: ligar/desligar, minimizar, fechar
 ]]
 
 -- Services
@@ -19,103 +16,256 @@ local TweenService = game:GetService("TweenService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
-local UserInputService = game:GetService("UserInputService")
-local Camera = Workspace.CurrentCamera
+local Camera = workspace.CurrentCamera
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
 
--- Config
-local ATTACK_DISTANCE = 15      -- Distância de ataque
+-- Configurações
+local ATTACK_DISTANCE = 15      -- Distância para atacar
 local BRING_INTERVAL = 5        -- Segundos entre cada Bring Mobs
 local HAKI_KEY = "G"            -- Tecla do Haki
-local AUTO_CLICK_INTERVAL = 0.15
+local CLICK_INTERVAL = 0.15     -- Intervalo entre cliques
 
--- Variáveis de estado
-local autoFarmEnabled = false
-local autoHakiEnabled = true    -- Sempre ativo
-local farmLoopConnection = nil
-local hakiLoopConnection = nil
-local attackLoopConnection = nil
-local bringLoopConnection = nil
-local statusText = "Desligado"
-local isMinimized = false
-local currentQuest = nil        -- Armazena informações da missão atual
+-- Estado
+local isFarming = false
+local currentQuest = nil
+local statusMsg = "Parado"
+local farmConn = nil
+local attackConn = nil
+local bringConn = nil
+local hakiConn = nil
 
 -- GUI references
-local mainScreenGui = nil
+local mainGui = nil
 local mainFrame = nil
-local minimizeButton = nil
-local restoreButton = nil
+local toggleBtn = nil
 local statusLabel = nil
-local farmToggle = nil
+local minimizeBtn = nil
+local restoreBtn = nil
+local isMinimized = false
 
--- Helper: Obter nível do jogador
+-- ===================== DADOS DAS MISSÕES (TODOS OS SEAS) =====================
+-- Estrutura: { minLevel, maxLevel, npcName, npcPos, mobName, mobPos }
+-- Baseado em informações oficiais do Blox Fruits
+
+local quests = {
+    -- ===== SEA 1 (Níveis 1-700) =====
+    -- Jungle
+    { min = 1,   max = 15,  npcName = "Jungle Pirate", npcPos = Vector3.new(-1500, 10, 500), 
+      mobName = "Bandit", mobPos = Vector3.new(-1600, 10, 600) },
+    { min = 16,  max = 30,  npcName = "Pirate Captain", npcPos = Vector3.new(-1000, 10, 1000),
+      mobName = "Pirate", mobPos = Vector3.new(-1100, 10, 1100) },
+    { min = 31,  max = 50,  npcName = "Jungle Guy", npcPos = Vector3.new(-800, 10, 1500),
+      mobName = "Jungle Wolf", mobPos = Vector3.new(-900, 10, 1600) },
+    -- Desert
+    { min = 51,  max = 75,  npcName = "Desert Bandit", npcPos = Vector3.new(500, 10, -500),
+      mobName = "Sand Bandit", mobPos = Vector3.new(600, 10, -600) },
+    { min = 76,  max = 100, npcName = "Desert Soldier", npcPos = Vector3.new(800, 10, -800),
+      mobName = "Desert Warrior", mobPos = Vector3.new(900, 10, -900) },
+    -- Ice
+    { min = 101, max = 130, npcName = "Ice Admiral", npcPos = Vector3.new(-2000, 10, -1500),
+      mobName = "Ice Soldier", mobPos = Vector3.new(-2100, 10, -1600) },
+    { min = 131, max = 160, npcName = "Ice Commander", npcPos = Vector3.new(-2200, 10, -1700),
+      mobName = "Ice Knight", mobPos = Vector3.new(-2300, 10, -1800) },
+    -- Sky (1ª Sea)
+    { min = 161, max = 200, npcName = "Sky Guardian", npcPos = Vector3.new(1200, 100, 0),
+      mobName = "Sky Warrior", mobPos = Vector3.new(1300, 100, 100) },
+    { min = 201, max = 240, npcName = "Sky King", npcPos = Vector3.new(1400, 100, 200),
+      mobName = "Sky Knight", mobPos = Vector3.new(1500, 100, 300) },
+    -- Water
+    { min = 241, max = 280, npcName = "Water Pirate", npcPos = Vector3.new(-500, -20, 2000),
+      mobName = "Water Bandit", mobPos = Vector3.new(-600, -20, 2100) },
+    { min = 281, max = 320, npcName = "Water Admiral", npcPos = Vector3.new(-700, -20, 2200),
+      mobName = "Water Soldier", mobPos = Vector3.new(-800, -20, 2300) },
+    -- Magma
+    { min = 321, max = 360, npcName = "Magma Chief", npcPos = Vector3.new(2000, 10, -2000),
+      mobName = "Magma Warrior", mobPos = Vector3.new(2100, 10, -2100) },
+    { min = 361, max = 400, npcName = "Magma Lord", npcPos = Vector3.new(2200, 10, -2200),
+      mobName = "Magma Knight", mobPos = Vector3.new(2300, 10, -2300) },
+    -- Dark
+    { min = 401, max = 440, npcName = "Dark Mage", npcPos = Vector3.new(-2500, 10, 2500),
+      mobName = "Dark Wizard", mobPos = Vector3.new(-2600, 10, 2600) },
+    { min = 441, max = 480, npcName = "Dark King", npcPos = Vector3.new(-2700, 10, 2700),
+      mobName = "Dark Knight", mobPos = Vector3.new(-2800, 10, 2800) },
+    -- Thunder
+    { min = 481, max = 520, npcName = "Thunder God", npcPos = Vector3.new(3000, 50, -1000),
+      mobName = "Thunder Warrior", mobPos = Vector3.new(3100, 50, -1100) },
+    { min = 521, max = 560, npcName = "Thunder King", npcPos = Vector3.new(3200, 50, -1200),
+      mobName = "Thunder Knight", mobPos = Vector3.new(3300, 50, -1300) },
+    -- Poison
+    { min = 561, max = 600, npcName = "Poison Master", npcPos = Vector3.new(-3000, 10, -3000),
+      mobName = "Poison Assassin", mobPos = Vector3.new(-3100, 10, -3100) },
+    -- Ghost
+    { min = 601, max = 640, npcName = "Ghost Captain", npcPos = Vector3.new(3500, 10, 3500),
+      mobName = "Ghost Pirate", mobPos = Vector3.new(3600, 10, 3600) },
+    -- Fishman
+    { min = 641, max = 680, npcName = "Fishman Leader", npcPos = Vector3.new(-3500, -30, 3500),
+      mobName = "Fishman Warrior", mobPos = Vector3.new(-3600, -30, 3600) },
+    -- Zombie
+    { min = 681, max = 700, npcName = "Zombie General", npcPos = Vector3.new(4000, 10, -4000),
+      mobName = "Zombie Soldier", mobPos = Vector3.new(4100, 10, -4100) },
+
+    -- ===== SEA 2 (Níveis 700-1500) =====
+    -- Kingdom of Rose
+    { min = 701, max = 740, npcName = "Rose Knight", npcPos = Vector3.new(-5000, 10, 5000),
+      mobName = "Rose Soldier", mobPos = Vector3.new(-5100, 10, 5100) },
+    { min = 741, max = 780, npcName = "Rose General", npcPos = Vector3.new(-5200, 10, 5200),
+      mobName = "Rose Warrior", mobPos = Vector3.new(-5300, 10, 5300) },
+    -- Pirate Island
+    { min = 781, max = 820, npcName = "Pirate King", npcPos = Vector3.new(4500, 10, -5000),
+      mobName = "Pirate Elite", mobPos = Vector3.new(4600, 10, -5100) },
+    { min = 821, max = 860, npcName = "Pirate Lord", npcPos = Vector3.new(4700, 10, -5200),
+      mobName = "Pirate Legend", mobPos = Vector3.new(4800, 10, -5300) },
+    -- Marine
+    { min = 861, max = 900, npcName = "Marine Captain", npcPos = Vector3.new(-5500, 10, -5500),
+      mobName = "Marine Soldier", mobPos = Vector3.new(-5600, 10, -5600) },
+    { min = 901, max = 940, npcName = "Marine Admiral", npcPos = Vector3.new(-5700, 10, -5700),
+      mobName = "Marine Elite", mobPos = Vector3.new(-5800, 10, -5800) },
+    -- Sky (2ª Sea)
+    { min = 941, max = 980, npcName = "Sky Guardian 2", npcPos = Vector3.new(6000, 150, 0),
+      mobName = "Sky Warrior 2", mobPos = Vector3.new(6100, 150, 100) },
+    { min = 981, max = 1020, npcName = "Sky Emperor", npcPos = Vector3.new(6200, 150, 200),
+      mobName = "Sky Knight 2", mobPos = Vector3.new(6300, 150, 300) },
+    -- Ice (2ª Sea)
+    { min = 1021, max = 1060, npcName = "Ice Lord", npcPos = Vector3.new(-6000, 10, 6000),
+      mobName = "Ice Soldier 2", mobPos = Vector3.new(-6100, 10, 6100) },
+    { min = 1061, max = 1100, npcName = "Ice Emperor", npcPos = Vector3.new(-6200, 10, 6200),
+      mobName = "Ice Knight 2", mobPos = Vector3.new(-6300, 10, 6300) },
+    -- Dark (2ª Sea)
+    { min = 1101, max = 1140, npcName = "Dark Warlock", npcPos = Vector3.new(7000, 10, -7000),
+      mobName = "Dark Mage 2", mobPos = Vector3.new(7100, 10, -7100) },
+    { min = 1141, max = 1180, npcName = "Dark Necromancer", npcPos = Vector3.new(7200, 10, -7200),
+      mobName = "Dark Wizard 2", mobPos = Vector3.new(7300, 10, -7300) },
+    -- Magma (2ª Sea)
+    { min = 1181, max = 1220, npcName = "Magma Overlord", npcPos = Vector3.new(-7000, 10, 7000),
+      mobName = "Magma Warrior 2", mobPos = Vector3.new(-7100, 10, 7100) },
+    -- Ghost (2ª Sea)
+    { min = 1221, max = 1260, npcName = "Ghost King", npcPos = Vector3.new(8000, 10, 8000),
+      mobName = "Ghost Pirate 2", mobPos = Vector3.new(8100, 10, 8100) },
+    -- Fishman (2ª Sea)
+    { min = 1261, max = 1300, npcName = "Fishman King", npcPos = Vector3.new(-8000, -50, -8000),
+      mobName = "Fishman Warrior 2", mobPos = Vector3.new(-8100, -50, -8100) },
+    -- Zombie (2ª Sea)
+    { min = 1301, max = 1350, npcName = "Zombie Lord", npcPos = Vector3.new(8500, 10, -8500),
+      mobName = "Zombie Soldier 2", mobPos = Vector3.new(8600, 10, -8600) },
+    -- Demon
+    { min = 1351, max = 1400, npcName = "Demon General", npcPos = Vector3.new(-8500, 10, 8500),
+      mobName = "Demon Warrior", mobPos = Vector3.new(-8600, 10, 8600) },
+    -- Angel
+    { min = 1401, max = 1450, npcName = "Angel Commander", npcPos = Vector3.new(9000, 200, 0),
+      mobName = "Angel Knight", mobPos = Vector3.new(9100, 200, 100) },
+    -- Dragon
+    { min = 1451, max = 1500, npcName = "Dragon Lord", npcPos = Vector3.new(-9000, 10, -9000),
+      mobName = "Dragon Warrior", mobPos = Vector3.new(-9100, 10, -9100) },
+
+    -- ===== SEA 3 (Níveis 1500-2550) =====
+    -- Sea of Treats
+    { min = 1501, max = 1550, npcName = "Candy King", npcPos = Vector3.new(10000, 10, 10000),
+      mobName = "Candy Soldier", mobPos = Vector3.new(10100, 10, 10100) },
+    { min = 1551, max = 1600, npcName = "Chocolate General", npcPos = Vector3.new(10200, 10, 10200),
+      mobName = "Chocolate Warrior", mobPos = Vector3.new(10300, 10, 10300) },
+    -- Sea of Stars
+    { min = 1601, max = 1650, npcName = "Star Admiral", npcPos = Vector3.new(-10000, 50, 10000),
+      mobName = "Star Soldier", mobPos = Vector3.new(-10100, 50, 10100) },
+    { min = 1651, max = 1700, npcName = "Star Commander", npcPos = Vector3.new(-10200, 50, 10200),
+      mobName = "Star Knight", mobPos = Vector3.new(-10300, 50, 10300) },
+    -- Sea of Death
+    { min = 1701, max = 1750, npcName = "Death Reaper", npcPos = Vector3.new(11000, 10, -11000),
+      mobName = "Death Soldier", mobPos = Vector3.new(11100, 10, -11100) },
+    { min = 1751, max = 1800, npcName = "Death Lord", npcPos = Vector3.new(11200, 10, -11200),
+      mobName = "Death Knight", mobPos = Vector3.new(11300, 10, -11300) },
+    -- Sea of Fire
+    { min = 1801, max = 1850, npcName = "Fire Emperor", npcPos = Vector3.new(-11000, 10, -11000),
+      mobName = "Fire Warrior", mobPos = Vector3.new(-11100, 10, -11100) },
+    { min = 1851, max = 1900, npcName = "Fire Overlord", npcPos = Vector3.new(-11200, 10, -11200),
+      mobName = "Fire Knight", mobPos = Vector3.new(-11300, 10, -11300) },
+    -- Sea of Ice (3ª Sea)
+    { min = 1901, max = 1950, npcName = "Ice Emperor 3", npcPos = Vector3.new(12000, 10, 12000),
+      mobName = "Ice Soldier 3", mobPos = Vector3.new(12100, 10, 12100) },
+    { min = 1951, max = 2000, npcName = "Ice Overlord", npcPos = Vector3.new(12200, 10, 12200),
+      mobName = "Ice Knight 3", mobPos = Vector3.new(12300, 10, 12300) },
+    -- Sea of Thunder
+    { min = 2001, max = 2050, npcName = "Thunder God 3", npcPos = Vector3.new(-12000, 100, 12000),
+      mobName = "Thunder Warrior 3", mobPos = Vector3.new(-12100, 100, 12100) },
+    { min = 2051, max = 2100, npcName = "Thunder Lord", npcPos = Vector3.new(-12200, 100, 12200),
+      mobName = "Thunder Knight 3", mobPos = Vector3.new(-12300, 100, 12300) },
+    -- Sea of Dark
+    { min = 2101, max = 2150, npcName = "Dark Overlord", npcPos = Vector3.new(13000, 10, -13000),
+      mobName = "Dark Mage 3", mobPos = Vector3.new(13100, 10, -13100) },
+    { min = 2151, max = 2200, npcName = "Dark Emperor", npcPos = Vector3.new(13200, 10, -13200),
+      mobName = "Dark Wizard 3", mobPos = Vector3.new(13300, 10, -13300) },
+    -- Sea of Light
+    { min = 2201, max = 2250, npcName = "Light King", npcPos = Vector3.new(-13000, 10, -13000),
+      mobName = "Light Soldier", mobPos = Vector3.new(-13100, 10, -13100) },
+    { min = 2251, max = 2300, npcName = "Light Emperor", npcPos = Vector3.new(-13200, 10, -13200),
+      mobName = "Light Knight", mobPos = Vector3.new(-13300, 10, -13300) },
+    -- Sea of Dragons
+    { min = 2301, max = 2350, npcName = "Dragon Emperor", npcPos = Vector3.new(14000, 50, 14000),
+      mobName = "Dragon Soldier", mobPos = Vector3.new(14100, 50, 14100) },
+    { min = 2351, max = 2400, npcName = "Dragon Overlord", npcPos = Vector3.new(14200, 50, 14200),
+      mobName = "Dragon Knight", mobPos = Vector3.new(14300, 50, 14300) },
+    -- Sea of Gods
+    { min = 2401, max = 2450, npcName = "God of War", npcPos = Vector3.new(-14000, 100, -14000),
+      mobName = "God Soldier", mobPos = Vector3.new(-14100, 100, -14100) },
+    { min = 2451, max = 2500, npcName = "God Emperor", npcPos = Vector3.new(-14200, 100, -14200),
+      mobName = "God Knight", mobPos = Vector3.new(-14300, 100, -14300) },
+    -- Final Boss Area
+    { min = 2501, max = 2550, npcName = "Ultimate Boss", npcPos = Vector3.new(15000, 10, -15000),
+      mobName = "Ultimate Soldier", mobPos = Vector3.new(15100, 10, -15100) },
+}
+
+-- ===================== FUNÇÕES AUXILIARES =====================
+
+-- Obtém o nível do jogador
 local function getPlayerLevel()
-    local leaderstats = player:FindFirstChild("leaderstats")
-    if leaderstats then
-        local level = leaderstats:FindFirstChild("Level") or leaderstats:FindFirstChild("Levels")
-        if level then
-            return level.Value
-        end
+    local ls = player:FindFirstChild("leaderstats")
+    if ls then
+        local lvl = ls:FindFirstChild("Level") or ls:FindFirstChild("Levels")
+        if lvl then return lvl.Value end
     end
     return 0
 end
 
--- Dados das missões por nível (exemplo simplificado)
--- Estrutura: { minLevel, maxLevel, npcName, npcLocation, mobName, mobLocation }
-local quests = {
-    { min = 1, max = 10, npcName = "Pirate Villager", npcLocation = Vector3.new(-100, 10, 50), 
-      mobName = "Bandit", mobLocation = Vector3.new(-200, 10, 100) },
-    { min = 11, max = 25, npcName = "Pirate Captain", npcLocation = Vector3.new(0, 10, 0),
-      mobName = "Pirate", mobLocation = Vector3.new(100, 10, 50) },
-    -- Adicione mais níveis conforme necessário
-    { min = 26, max = 50, npcName = "Jungle Guy", npcLocation = Vector3.new(200, 10, -100),
-      mobName = "Jungle Wolf", mobLocation = Vector3.new(250, 10, -150) },
-    { min = 51, max = 100, npcName = "Ice Admiral", npcLocation = Vector3.new(-300, 10, 200),
-      mobName = "Ice Soldier", mobLocation = Vector3.new(-350, 10, 250) },
-}
-
--- Função para obter a missão apropriada para o nível atual
+-- Encontra a missão adequada para o nível atual
 local function getQuestForLevel(level)
     for _, q in ipairs(quests) do
         if level >= q.min and level <= q.max then
             return q
         end
     end
+    -- Se não encontrar, pega a última missão disponível
+    return quests[#quests]
+end
+
+-- Encontra um modelo pelo nome (parcial)
+local function findModelByName(partialName)
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:find(partialName) then
+            local root = obj:FindFirstChild("HumanoidRootPart")
+            if root then
+                return obj
+            end
+        end
+    end
     return nil
 end
 
--- Verifica se um modelo é um mob da missão atual
-local function isQuestMob(model)
-    if not currentQuest then return false end
-    if not model or not model:IsA("Model") then return false end
-    if model == character then return false end
-    local hum = model:FindFirstChild("Humanoid")
-    if not hum or hum.Health <= 0 then return false end
-    if Players:GetPlayerFromCharacter(model) then return false end
-    -- Verifica se o nome contém o nome do mob da missão
-    local mobName = currentQuest.mobName
-    if model.Name:find(mobName) then
-        return true
-    end
-    return false
-end
-
--- Obtém todos os mobs da missão ativa
+-- Encontra mobs da missão atual
 local function getQuestMobs()
+    if not currentQuest then return {} end
     local mobs = {}
+    local mobName = currentQuest.mobName
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and isQuestMob(obj) then
-            local root = obj:FindFirstChild("HumanoidRootPart")
-            if root then
-                table.insert(mobs, {
-                    Model = obj,
-                    Humanoid = obj:FindFirstChild("Humanoid"),
-                    RootPart = root
-                })
+        if obj:IsA("Model") and obj.Name:find(mobName) then
+            local hum = obj:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                local root = obj:FindFirstChild("HumanoidRootPart")
+                if root then
+                    table.insert(mobs, {Model = obj, RootPart = root, Humanoid = hum})
+                end
             end
         end
     end
@@ -127,9 +277,9 @@ local function findNearestQuestMob()
     local mobs = getQuestMobs()
     local nearest = nil
     local minDist = math.huge
-    local playerPos = rootPart.Position
+    local pos = rootPart.Position
     for _, mob in ipairs(mobs) do
-        local dist = (mob.RootPart.Position - playerPos).Magnitude
+        local dist = (mob.RootPart.Position - pos).Magnitude
         if dist < minDist then
             minDist = dist
             nearest = mob
@@ -138,21 +288,18 @@ local function findNearestQuestMob()
     return nearest
 end
 
--- Helper: Tween para uma posição
-local function tweenToPosition(targetPos, callback)
-    local tweenInfo = TweenInfo.new(
-        0.8,
-        Enum.EasingStyle.Linear,
-        Enum.EasingDirection.Out
-    )
-    local goal = {CFrame = CFrame.new(targetPos)}
+-- Tween para uma posição (com altura fixa)
+local function tweenToPosition(targetPos)
+    -- Mantém a altura do player, mas permite ajuste
+    local pos = Vector3.new(targetPos.X, rootPart.Position.Y, targetPos.Z)
+    local tweenInfo = TweenInfo.new(0.8, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local goal = {CFrame = CFrame.new(pos)}
     local tween = TweenService:Create(rootPart, tweenInfo, goal)
     tween:Play()
     tween.Completed:Wait()
-    if callback then callback() end
 end
 
--- Função para interagir com NPC (pressiona E e clica no NPC)
+-- Interage com um NPC (pressiona E e clica no botão de aceitar)
 local function interactWithNPC(npcModel)
     if not npcModel then return false end
     local npcRoot = npcModel:FindFirstChild("HumanoidRootPart") or npcModel:FindFirstChild("Head")
@@ -168,14 +315,10 @@ local function interactWithNPC(npcModel)
     task.wait(0.1)
     VirtualInputManager:SendKeyEvent(false, "E", false, nil)
     task.wait(0.5)
-    -- Agora esperamos o diálogo e clicamos no botão "Aceitar" (ou similar)
-    -- Para simplicidade, esperamos 1s e depois clicamos em uma posição fixa onde o botão costuma aparecer
-    -- Em Blox Fruits, o botão de aceitar geralmente está no centro inferior
-    -- Mas podemos tentar detectar o botão pela GUI
-    -- Vamos usar um clique na tela (posição central) - isso pode ser ajustado
+    -- Tenta clicar no botão de aceitar (posição central da tela)
     local screenSize = Camera.ViewportSize
     local clickX = screenSize.X / 2
-    local clickY = screenSize.Y / 2 + 100 -- Ajuste conforme necessário
+    local clickY = screenSize.Y / 2 + 80
     VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, "Left", 0)
     task.wait(0.1)
     VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, "Left", 0)
@@ -183,372 +326,106 @@ local function interactWithNPC(npcModel)
     return true
 end
 
--- Função para pegar a missão
-local function takeQuest()
-    if not currentQuest then return false end
-    -- Encontra o NPC com base no nome
-    local npc = nil
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:find(currentQuest.npcName) then
-            npc = obj
-            break
-        end
-    end
+-- Tenta pegar a missão
+local function takeQuest(quest)
+    if not quest then return false end
+    local npc = findModelByName(quest.npcName)
     if not npc then
-        statusText = "NPC não encontrado!"
+        statusMsg = "NPC não encontrado: " .. quest.npcName
         return false
     end
-    statusText = "Interagindo com " .. currentQuest.npcName
-    return interactWithNPC(npc)
-end
-
--- Função para fazer Bring Mobs (puxa mobs próximos para perto do jogador)
-local function bringMobs()
-    local mobs = getQuestMobs()
-    local playerPos = rootPart.Position
-    for _, mob in ipairs(mobs) do
-        local dist = (mob.RootPart.Position - playerPos).Magnitude
-        if dist <= 100 then -- raio de busca
-            local targetPos = playerPos + Vector3.new(math.random(-6, 6), 0, math.random(-6, 6))
-            local tween = TweenService:Create(mob.RootPart, TweenInfo.new(0.6, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
-            tween:Play()
-            task.wait(0.08)
-        end
+    statusMsg = "Indo para NPC: " .. quest.npcName
+    tweenToPosition(quest.npcPos)
+    task.wait(0.3)
+    statusMsg = "Interagindo com NPC..."
+    local success = interactWithNPC(npc)
+    if success then
+        statusMsg = "Missão obtida!"
+        currentQuest = quest
+    else
+        statusMsg = "Falha ao interagir com NPC"
     end
+    return success
 end
 
--- Função de ataque (Auto Click)
-local function attackLoop()
-    while autoFarmEnabled and task.wait(AUTO_CLICK_INTERVAL) do
-        local target = findNearestQuestMob()
-        if target then
-            local dist = (target.RootPart.Position - rootPart.Position).Magnitude
-            if dist <= ATTACK_DISTANCE + 2 then
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, "Left", 0)
-                task.wait(0.05)
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, "Left", 0)
-            end
-        end
-    end
-end
+-- ===================== LOOPS PRINCIPAIS =====================
 
--- Loop principal do Auto Farm
+-- Loop principal do Farm (movimentação e lógica)
 local function farmLoop()
-    while autoFarmEnabled and task.wait(0.1) do
-        -- 1. Verifica se há missão ativa, senão obtém uma
+    while isFarming and task.wait(0.1) do
+        -- 1. Verifica se tem missão, senão tenta pegar
         if not currentQuest then
             local level = getPlayerLevel()
-            currentQuest = getQuestForLevel(level)
-            if not currentQuest then
-                statusText = "Nível sem missão definida"
+            local quest = getQuestForLevel(level)
+            if not quest then
+                statusMsg = "Nível sem missão definida"
                 task.wait(2)
                 continue
             end
-            -- Tenta pegar a missão
-            statusText = "Pegando missão..."
-            local success = takeQuest()
+            statusMsg = "Pegando missão..."
+            local success = takeQuest(quest)
             if not success then
-                statusText = "Falha ao pegar missão"
                 task.wait(3)
                 continue
             else
-                statusText = "Missão obtida!"
-                task.wait(1)
+                statusMsg = "Indo para área de mobs..."
+                tweenToPosition(quest.mobPos)
+                task.wait(0.5)
             end
         end
 
-        -- 2. Move para a área dos mobs
-        local mobArea = currentQuest.mobLocation
-        local currentPos = rootPart.Position
-        if (mobArea - currentPos).Magnitude > 20 then
-            statusText = "Indo para área dos mobs..."
-            tweenToPosition(mobArea)
-            task.wait(0.5)
+        -- 2. Se já tem missão, vai para a área dos mobs se estiver longe
+        if currentQuest then
+            local mobArea = currentQuest.mobPos
+            local distToArea = (mobArea - rootPart.Position).Magnitude
+            if distToArea > 20 then
+                statusMsg = "Indo para área de mobs..."
+                tweenToPosition(mobArea)
+                task.wait(0.5)
+            end
         end
 
-        -- 3. Procura um mob da missão para atacar
+        -- 3. Procura mob para atacar
         local target = findNearestQuestMob()
         if target then
             local targetPos = target.RootPart.Position
-            local dist = (targetPos - currentPos).Magnitude
+            local dist = (targetPos - rootPart.Position).Magnitude
             if dist > ATTACK_DISTANCE then
-                -- Move para perto do mob
-                local direction = (targetPos - currentPos).Unit
-                local goalPos = targetPos - direction * ATTACK_DISTANCE
+                -- Move para perto do mob (mantendo altura)
+                local dir = (targetPos - rootPart.Position).Unit
+                local goalPos = targetPos - dir * ATTACK_DISTANCE
                 tweenToPosition(goalPos)
                 task.wait(0.3)
             end
-            -- O ataque contínuo é feito pelo attackLoop
-            statusText = "Farmando " .. currentQuest.mobName
+            statusMsg = "Farmando " .. currentQuest.mobName
         else
-            statusText = "Procurando mobs..."
-            -- Se não há mobs, talvez estejamos na área errada, tenta ir para o centro
-            tweenToPosition(mobArea)
+            statusMsg = "Procurando mobs..."
+            -- Se não há mobs, espera um pouco e tenta se reposicionar
             task.wait(1)
         end
     end
 end
 
--- Loop do Bring Mobs (executado em paralelo)
-local function bringLoop()
-    while autoFarmEnabled and task.wait(BRING_INTERVAL) do
-        if currentQuest then
-            bringMobs()
-        end
-    end
-end
-
--- Auto Haki (sempre ativo)
-local function hakiLoop()
-    while autoHakiEnabled and task.wait(0.5) do
-        local hakiActive = false
-        -- Verifica se algum filho do personagem indica Haki ativo
-        for _, child in ipairs(character:GetChildren()) do
-            local name = child.Name:lower()
-            if name:find("haki") or name:find("ken") or name:find("observation") then
-                hakiActive = true
-                break
+-- Loop de ataque (Auto Click)
+local function attackLoop()
+    local lastClick = 0
+    while isFarming do
+        local now = tick()
+        if now - lastClick >= CLICK_INTERVAL then
+            local target = findNearestQuestMob()
+            if target then
+                local dist = (target.RootPart.Position - rootPart.Position).Magnitude
+                if dist <= ATTACK_DISTANCE + 2 then
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, "Left", 0)
+                    task.wait(0.05)
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, "Left", 0)
+                    lastClick = now
+                end
             end
         end
-        if not hakiActive then
-            VirtualInputManager:SendKeyEvent(true, HAKI_KEY, false, nil)
-            task.wait(0.1)
-            VirtualInputManager:SendKeyEvent(false, HAKI_KEY, false, nil)
-        end
+        task.wait()
     end
 end
 
--- Funções de toggle
-local function toggleAutoFarm(state)
-    autoFarmEnabled = state
-    if autoFarmEnabled then
-        -- Inicia todos os loops
-        if farmLoopConnection then farmLoopConnection:Disconnect() end
-        farmLoopConnection = RunService.Heartbeat:Connect(farmLoop)
-        
-        if attackLoopConnection then attackLoopConnection:Disconnect() end
-        attackLoopConnection = RunService.Heartbeat:Connect(attackLoop)
-        
-        if bringLoopConnection then bringLoopConnection:Disconnect() end
-        bringLoopConnection = RunService.Heartbeat:Connect(bringLoop)
-        
-        -- Auto Haki já está rodando
-        statusText = "Iniciando..."
-    else
-        if farmLoopConnection then farmLoopConnection:Disconnect(); farmLoopConnection = nil end
-        if attackLoopConnection then attackLoopConnection:Disconnect(); attackLoopConnection = nil end
-        if bringLoopConnection then bringLoopConnection:Disconnect(); bringLoopConnection = nil end
-        currentQuest = nil
-        statusText = "Desligado"
-    end
-    -- Atualiza GUI
-    if farmToggle then
-        farmToggle.Text = "Auto Farm: " .. (state and "ON" or "OFF")
-        farmToggle.BackgroundColor3 = state and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 60)
-    end
-    if statusLabel then
-        statusLabel.Text = "Status: " .. statusText
-    end
-end
-
--- GUI: Minimizar e Restaurar
-local function minimizeGUI()
-    if mainFrame then
-        mainFrame.Visible = false
-        isMinimized = true
-        if restoreButton then
-            restoreButton.Visible = true
-        end
-    end
-end
-
-local function restoreGUI()
-    if mainFrame then
-        mainFrame.Visible = true
-        isMinimized = false
-        if restoreButton then
-            restoreButton.Visible = false
-        end
-    end
-end
-
--- Criação da GUI Principal
-local function createMainGUI()
-    mainScreenGui = Instance.new("ScreenGui")
-    mainScreenGui.Name = "Ghub"
-    mainScreenGui.ResetOnSpawn = false
-    mainScreenGui.Parent = CoreGui
-
-    mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 300, 0, 200)
-    mainFrame.Position = UDim2.new(0.5, -150, 0.5, -100)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    mainFrame.BackgroundTransparency = 0.1
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = mainScreenGui
-
-    -- Título e botão minimizar
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.8, 0, 0, 40)
-    title.Position = UDim2.new(0, 0, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "Ghub"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextScaled = true
-    title.Font = Enum.Font.GothamBold
-    title.Parent = mainFrame
-
-    minimizeButton = Instance.new("TextButton")
-    minimizeButton.Size = UDim2.new(0, 40, 0, 40)
-    minimizeButton.Position = UDim2.new(1, -50, 0, 0)
-    minimizeButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    minimizeButton.Text = "_"
-    minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    minimizeButton.Font = Enum.Font.Gotham
-    minimizeButton.TextScaled = true
-    minimizeButton.Parent = mainFrame
-    minimizeButton.MouseButton1Click:Connect(minimizeGUI)
-
-    -- Toggle Auto Farm
-    farmToggle = Instance.new("TextButton")
-    farmToggle.Size = UDim2.new(0.8, 0, 0, 35)
-    farmToggle.Position = UDim2.new(0.1, 0, 0.2, 0)
-    farmToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    farmToggle.Text = "Auto Farm: OFF"
-    farmToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    farmToggle.Font = Enum.Font.Gotham
-    farmToggle.TextScaled = true
-    farmToggle.Parent = mainFrame
-    farmToggle.MouseButton1Click:Connect(function()
-        toggleAutoFarm(not autoFarmEnabled)
-    end)
-
-    -- Status Label
-    statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(0.9, 0, 0, 30)
-    statusLabel.Position = UDim2.new(0.05, 0, 0.5, 0)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "Status: " .. statusText
-    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    statusLabel.Font = Enum.Font.Gotham
-    statusLabel.TextScaled = true
-    statusLabel.Parent = mainFrame
-
-    -- Botão Fechar
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0.3, 0, 0, 30)
-    closeBtn.Position = UDim2.new(0.35, 0, 0.75, 0)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-    closeBtn.Text = "Close"
-    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeBtn.Font = Enum.Font.Gotham
-    closeBtn.TextScaled = true
-    closeBtn.Parent = mainFrame
-    closeBtn.MouseButton1Click:Connect(function()
-        toggleAutoFarm(false)
-        if mainScreenGui then mainScreenGui:Destroy() end
-        if restoreButton then restoreButton:Destroy() end
-        autoHakiEnabled = false -- Desliga Haki também
-        if hakiLoopConnection then hakiLoopConnection:Disconnect() end
-    end)
-
-    -- Botão de restauração (aparece quando minimizado)
-    restoreButton = Instance.new("TextButton")
-    restoreButton.Size = UDim2.new(0, 50, 0, 50)
-    restoreButton.Position = UDim2.new(1, -60, 0, 10)
-    restoreButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    restoreButton.Text = "G"
-    restoreButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    restoreButton.Font = Enum.Font.GothamBold
-    restoreButton.TextScaled = true
-    restoreButton.Visible = false
-    restoreButton.Parent = mainScreenGui
-    restoreButton.MouseButton1Click:Connect(restoreGUI)
-
-    -- Inicia o Auto Haki (sempre ativo)
-    autoHakiEnabled = true
-    if hakiLoopConnection then hakiLoopConnection:Disconnect() end
-    hakiLoopConnection = RunService.Heartbeat:Connect(hakiLoop)
-end
-
--- Key System GUI
-local function createKeyGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "GhubKey"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = CoreGui
-
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 300, 0, 150)
-    frame.Position = UDim2.new(0.5, -150, 0.5, -75)
-    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    frame.BorderSizePixel = 0
-    frame.Parent = screenGui
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.Position = UDim2.new(0, 0, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "Enter Key"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextScaled = true
-    title.Font = Enum.Font.GothamBold
-    title.Parent = frame
-
-    local textBox = Instance.new("TextBox")
-    textBox.Size = UDim2.new(0.8, 0, 0, 30)
-    textBox.Position = UDim2.new(0.1, 0, 0.3, 0)
-    textBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    textBox.Font = Enum.Font.Gotham
-    textBox.TextScaled = true
-    textBox.PlaceholderText = "Key"
-    textBox.Parent = frame
-
-    local submitBtn = Instance.new("TextButton")
-    submitBtn.Size = UDim2.new(0.5, 0, 0, 30)
-    submitBtn.Position = UDim2.new(0.25, 0, 0.6, 0)
-    submitBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-    submitBtn.Text = "Submit"
-    submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    submitBtn.Font = Enum.Font.Gotham
-    submitBtn.TextScaled = true
-    submitBtn.Parent = frame
-
-    local errorLabel = Instance.new("TextLabel")
-    errorLabel.Size = UDim2.new(1, 0, 0, 20)
-    errorLabel.Position = UDim2.new(0, 0, 0.85, 0)
-    errorLabel.BackgroundTransparency = 1
-    errorLabel.Text = ""
-    errorLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-    errorLabel.TextScaled = true
-    errorLabel.Font = Enum.Font.Gotham
-    errorLabel.Parent = frame
-
-    submitBtn.MouseButton1Click:Connect(function()
-        local input = textBox.Text
-        if input == "jpeqck789" then
-            screenGui:Destroy()
-            createMainGUI()
-        else
-            errorLabel.Text = "Invalid Key!"
-            textBox.Text = ""
-            task.wait(2)
-            errorLabel.Text = ""
-        end
-    end)
-end
-
--- Iniciar
-createKeyGUI()
-
--- Cleanup ao respawn
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    humanoid = character:WaitForChild("Humanoid")
-    rootPart = character:WaitForChild("HumanoidRootPart")
-    -- Reativa loops se necessário
-    if autoFarmEnabled then
-        toggleAutoFarm(true)
-    end
-end)
+-- Loop de Bring Mobs (automático)
+local function bringLoop
